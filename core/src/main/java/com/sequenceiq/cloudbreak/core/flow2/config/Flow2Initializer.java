@@ -11,6 +11,7 @@ import javax.inject.Inject;
 
 import org.springframework.stereotype.Component;
 
+import com.sequenceiq.cloudbreak.core.flow2.Flow2CancellationHandler;
 import com.sequenceiq.cloudbreak.core.flow2.Flow2Handler;
 import com.sequenceiq.cloudbreak.core.flow2.FlowEvent;
 
@@ -25,14 +26,18 @@ public class Flow2Initializer {
     @Inject
     private Flow2Handler flow2Handler;
 
+    @Inject
+    private Flow2CancellationHandler flow2CancellationHandler;
+
     @Resource
     private List<FlowConfiguration<?>> flowConfigs;
 
     @PostConstruct
     public void init() {
-        String eventSelector = Stream.concat(Stream.of(Flow2Handler.FLOW_FINAL, Flow2Handler.FLOW_CANCEL),
-                                            flowConfigs.stream().flatMap(c -> Arrays.stream(c.getEvents())).map(FlowEvent::stringRepresentation)
-                                    ).distinct().collect(Collectors.joining("|"));
+        String eventSelector = Stream.concat(
+                    Stream.of(Flow2Handler.FLOW_FINAL), flowConfigs.stream().flatMap(c -> Arrays.stream(c.getEvents())).map(FlowEvent::stringRepresentation)
+                ).distinct().collect(Collectors.joining("|"));
         reactor.on(Selectors.regex(eventSelector), flow2Handler);
+        reactor.on(Selectors.regex(Flow2CancellationHandler.FLOW_CANCEL), flow2CancellationHandler);
     }
 }

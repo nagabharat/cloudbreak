@@ -2,12 +2,14 @@ package com.sequenceiq.cloudbreak.core.flow2.service;
 
 import javax.inject.Inject;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.sequenceiq.cloudbreak.api.model.HostGroupAdjustmentJson;
 import com.sequenceiq.cloudbreak.api.model.InstanceGroupAdjustmentJson;
 import com.sequenceiq.cloudbreak.common.type.ScalingType;
-import com.sequenceiq.cloudbreak.core.flow2.Flow2Handler;
+import com.sequenceiq.cloudbreak.core.flow2.Flow2CancellationHandler;
 import com.sequenceiq.cloudbreak.core.flow2.FlowTriggers;
 import com.sequenceiq.cloudbreak.core.flow2.event.ClusterAndStackDownscaleTriggerEvent;
 import com.sequenceiq.cloudbreak.core.flow2.event.ClusterCredentialChangeTriggerEvent;
@@ -16,7 +18,9 @@ import com.sequenceiq.cloudbreak.core.flow2.event.InstanceTerminationTriggerEven
 import com.sequenceiq.cloudbreak.core.flow2.event.StackAndClusterUpscaleTriggerEvent;
 import com.sequenceiq.cloudbreak.core.flow2.event.StackScaleTriggerEvent;
 import com.sequenceiq.cloudbreak.core.flow2.event.StackSyncTriggerEvent;
+import com.sequenceiq.cloudbreak.reactor.api.FlowCancellationRequest;
 import com.sequenceiq.cloudbreak.reactor.api.event.StackEvent;
+import com.sequenceiq.cloudbreak.service.stack.connector.OperationException;
 
 import reactor.bus.EventBus;
 
@@ -26,6 +30,8 @@ import reactor.bus.EventBus;
  */
 @Service
 public class ReactorFlowManager {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ReactorFlowManager.class);
 
     @Inject
     private EventBus reactor;
@@ -76,19 +82,28 @@ public class ReactorFlowManager {
     }
 
     public void triggerTermination(Long stackId) {
+        cancelRunningFlows(stackId);
         String selector = FlowTriggers.STACK_TERMINATE_TRIGGER_EVENT;
         StackEvent event = new StackEvent(selector, stackId);
-        StackEvent cancelEvent = new StackEvent(Flow2Handler.FLOW_CANCEL, stackId);
         reactor.notify(selector, eventFactory.createEvent(event, selector));
-        reactor.notify(Flow2Handler.FLOW_CANCEL, eventFactory.createEvent(cancelEvent, Flow2Handler.FLOW_CANCEL));
     }
 
     public void triggerForcedTermination(Long stackId) {
+        cancelRunningFlows(stackId);
         String selector = FlowTriggers.STACK_FORCE_TERMINATE_TRIGGER_EVENT;
         StackEvent event = new StackEvent(selector, stackId);
-        StackEvent cancelEvent = new StackEvent(Flow2Handler.FLOW_CANCEL, stackId);
         reactor.notify(selector, eventFactory.createEvent(event, selector));
-        reactor.notify(Flow2Handler.FLOW_CANCEL, eventFactory.createEvent(event, Flow2Handler.FLOW_CANCEL));
+    }
+
+    public void cancelRunningFlows(Long stackId) {
+        FlowCancellationRequest flowCancellationRequest = new FlowCancellationRequest(stackId);
+        reactor.notify(Flow2CancellationHandler.FLOW_CANCEL, eventFactory.createEvent(flowCancellationRequest, Flow2CancellationHandler.FLOW_CANCEL));
+        try {
+            Integer cancelledFlows = flowCancellationRequest.await();
+            LOGGER.info("{} flow(s) successfully cancelled.", cancelledFlows);
+        } catch (InterruptedException e) {
+            throw new OperationException(e);
+        }
     }
 
     public void triggerClusterInstall(Long stackId) {

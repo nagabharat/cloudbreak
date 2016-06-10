@@ -49,6 +49,6 @@ public class Flow2InitializerTest {
         flowConfigs.add(new StackTerminationFlowConfig());
         given(this.flowConfigs.stream()).willReturn(flowConfigs.stream());
         underTest.init();
-        verify(reactor, times(1)).on(any(Selector.class), any(Consumer.class));
+        verify(reactor, times(2)).on(any(Selector.class), any(Consumer.class));
     }
 }

@@ -1,8 +1,10 @@
 package com.sequenceiq.cloudbreak.core.flow;
 
 import static org.mockito.Matchers.any;
+import static org.mockito.Matchers.anyLong;
 import static org.mockito.Matchers.anyObject;
 import static org.mockito.Matchers.anyString;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -15,12 +17,11 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
 
 import com.sequenceiq.cloudbreak.api.model.HostGroupAdjustmentJson;
 import com.sequenceiq.cloudbreak.api.model.InstanceGroupAdjustmentJson;
-import com.sequenceiq.cloudbreak.cloud.model.Platform;
-import com.sequenceiq.cloudbreak.common.type.CloudConstants;
 import com.sequenceiq.cloudbreak.core.flow2.service.ErrorHandlerAwareFlowEventFactory;
 import com.sequenceiq.cloudbreak.core.flow2.service.ReactorFlowManager;
 
@@ -30,7 +31,6 @@ import reactor.core.dispatch.ThreadPoolExecutorDispatcher;
 
 @RunWith(MockitoJUnitRunner.class)
 public class ReactorFlowManagerTest {
-    private static final Platform GCP_PLATFORM = Platform.platform(CloudConstants.GCP);
 
     @Mock
     private EventBus reactor;
@@ -39,6 +39,7 @@ public class ReactorFlowManagerTest {
     private ErrorHandlerAwareFlowEventFactory eventFactory;
 
     @InjectMocks
+    @Spy
     private ReactorFlowManager flowManager;
 
     @Before
@@ -47,6 +48,7 @@ public class ReactorFlowManagerTest {
         reset(eventFactory);
         when(reactor.notify((Object) anyObject(), any(Event.class))).thenReturn(new EventBus(new ThreadPoolExecutorDispatcher(1, 1)));
         when(eventFactory.createEvent(anyObject(), anyString())).thenReturn(new Event<Object>(String.class));
+        doNothing().when(flowManager).cancelRunningFlows(anyLong());
     }
 
     @Test
@@ -81,8 +83,6 @@ public class ReactorFlowManagerTest {
                 count++;
             }
         }
-        // Termination triggers flow cancellation
-        count += 2;
         verify(reactor, times(count)).notify((Object) anyObject(), any(Event.class));
     }
 }
