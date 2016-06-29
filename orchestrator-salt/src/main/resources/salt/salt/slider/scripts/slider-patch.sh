@@ -30,6 +30,7 @@ main(){
     exit 0
   fi
   patch -b slider-agent/agent/main.py /opt/scripts/slider/SLIDER-942.1.diff
+  patch -b slider-agent/resource_management/libraries/functions/os_check.py /opt/scripts/slider/os_check.diff
 
   echo "Removing $tar_file."
   rm -f "../$tar_file"
