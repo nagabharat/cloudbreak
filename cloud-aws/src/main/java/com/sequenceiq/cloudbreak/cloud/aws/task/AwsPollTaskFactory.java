@@ -1,5 +1,6 @@
 package com.sequenceiq.cloudbreak.cloud.aws.task;
 
+import java.util.Date;
 import java.util.List;
 
 import javax.inject.Inject;
@@ -40,7 +41,8 @@ public class AwsPollTaskFactory {
 
     public PollTask<Boolean> newASGroupStatusCheckerTask(AuthenticatedContext authenticatedContext, String asGroupName, Integer requiredInstances,
             AwsClient awsClient, CloudFormationStackUtil cloudFormationStackUtil) {
-        return createPollTask(ASGroupStatusCheckerTask.NAME, authenticatedContext, asGroupName, requiredInstances, awsClient, cloudFormationStackUtil);
+        return createPollTask(ASGroupStatusCheckerTask.NAME, authenticatedContext, asGroupName, requiredInstances, awsClient,
+                cloudFormationStackUtil, new Date());
     }
 
     @SuppressWarnings("unchecked")

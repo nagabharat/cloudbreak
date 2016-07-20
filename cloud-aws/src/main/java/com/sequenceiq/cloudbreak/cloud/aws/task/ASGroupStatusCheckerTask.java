@@ -1,5 +1,6 @@
 package com.sequenceiq.cloudbreak.cloud.aws.task;
 
+import java.util.Date;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -35,14 +36,16 @@ public class ASGroupStatusCheckerTask extends PollBooleanStateTask {
     private Integer requiredInstances;
     private AwsClient awsClient;
     private CloudFormationStackUtil cloudFormationStackUtil;
+    private Date startDate;
 
     public ASGroupStatusCheckerTask(AuthenticatedContext authenticatedContext, String asGroupName, Integer requiredInstances, AwsClient awsClient,
-            CloudFormationStackUtil cloudFormationStackUtil) {
+            CloudFormationStackUtil cloudFormationStackUtil, Date startDate) {
         super(authenticatedContext, true);
         this.autoScalingGroupName = asGroupName;
         this.requiredInstances = requiredInstances;
         this.awsClient = awsClient;
         this.cloudFormationStackUtil = cloudFormationStackUtil;
+        this.startDate = startDate;
     }
 
     @Override
@@ -55,13 +58,17 @@ public class ASGroupStatusCheckerTask extends PollBooleanStateTask {
         List<String> instanceIds = cloudFormationStackUtil.getInstanceIds(amazonASClient, autoScalingGroupName);
         if (instanceIds.size() < requiredInstances) {
             LOGGER.debug("Instances in AS group: {}, needed: {}", instanceIds.size(), requiredInstances);
-            DescribeScalingActivitiesRequest describeScalingActivitiesRequest =
-                    new DescribeScalingActivitiesRequest().withAutoScalingGroupName(autoScalingGroupName);
+            DescribeScalingActivitiesRequest describeScalingActivitiesRequest = new DescribeScalingActivitiesRequest()
+                    .withAutoScalingGroupName(autoScalingGroupName)
+                    .withMaxRecords(100);
             List<Activity> activities = amazonASClient.describeScalingActivities(describeScalingActivitiesRequest).getActivities();
             for (Activity activity : activities) {
-                if (activity.getProgress().equals(COMPLETED) && CANCELLED.equals(activity.getStatusCode())) {
-                    throw new CancellationException(activity.getStatusMessage());
+                if (activity.getStartTime().compareTo(startDate) > 0) {
+                    if (activity.getProgress().equals(COMPLETED) && CANCELLED.equals(activity.getStatusCode())) {
+                        throw new CancellationException(activity.getStatusMessage());
+                    }
                 }
+
             }
             return false;
         }
