@@ -13,8 +13,11 @@ import com.sequenceiq.cloudbreak.shell.commands.base.BaseTemplateCommands;
 import com.sequenceiq.cloudbreak.shell.commands.common.BasicCommands;
 import com.sequenceiq.cloudbreak.shell.commands.common.BlueprintCommands;
 import com.sequenceiq.cloudbreak.shell.commands.common.ClusterCommands;
+import com.sequenceiq.cloudbreak.shell.commands.common.DatabaseCommands;
 import com.sequenceiq.cloudbreak.shell.commands.common.HostGroupCommands;
 import com.sequenceiq.cloudbreak.shell.commands.common.InstanceGroupCommands;
+import com.sequenceiq.cloudbreak.shell.commands.common.RdsConfigCommands;
+import com.sequenceiq.cloudbreak.shell.commands.common.LdapConfigCommands;
 import com.sequenceiq.cloudbreak.shell.commands.common.RecipeCommands;
 import com.sequenceiq.cloudbreak.shell.commands.common.SecurityGroupCommands;
 import com.sequenceiq.cloudbreak.shell.commands.common.SssdConfigCommands;
@@ -79,6 +82,16 @@ public class CommandDefinition {
     }
 
     @Bean
+    RdsConfigCommands rdsConfigCommands() {
+        return new RdsConfigCommands(shellContext);
+    }
+
+    @Bean
+    LdapConfigCommands ldapConfigCommands() {
+        return new LdapConfigCommands(shellContext);
+    }
+
+    @Bean
     BaseStackCommands stackCommands() {
         return new BaseStackCommands(shellContext, cloudbreakShellUtil);
     }
@@ -94,10 +107,14 @@ public class CommandDefinition {
     }
 
     @Bean
+    DatabaseCommands databaseCommands() {
+        return new DatabaseCommands(shellContext);
+    }
+
+    @Bean
     ClusterCommands clusterCommands() {
         return new ClusterCommands(shellContext, cloudbreakShellUtil);
     }
-
 
     @Bean
     public AwsCommands awsCredentialCommands() {

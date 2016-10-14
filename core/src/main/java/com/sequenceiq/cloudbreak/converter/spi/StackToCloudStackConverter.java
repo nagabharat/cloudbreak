@@ -134,17 +134,25 @@ public class StackToCloudStackConverter {
 
     private Network buildNetwork(Stack stack) {
         com.sequenceiq.cloudbreak.domain.Network stackNetwork = stack.getNetwork();
-        Subnet subnet = new Subnet(stackNetwork.getSubnetCIDR());
-        Json attributes = stackNetwork.getAttributes();
-        Map<String, Object> params = attributes == null ? Collections.emptyMap() : attributes.getMap();
-        return new Network(subnet, params);
+        Network result = null;
+        if (stackNetwork != null) {
+            Subnet subnet = new Subnet(stackNetwork.getSubnetCIDR());
+            Json attributes = stackNetwork.getAttributes();
+            Map<String, Object> params = attributes == null ? Collections.emptyMap() : attributes.getMap();
+            result = new Network(subnet, params);
+        }
+        return result;
     }
 
     private Long getFirstValidPrivateId(List<InstanceGroup> instanceGroups) {
+        LOGGER.info("Get first valid PrivateId of instanceGroups");
         long highest = 0;
         for (InstanceGroup instanceGroup : instanceGroups) {
-            for (InstanceMetaData metaData : instanceGroup.getInstanceMetaData()) {
+            LOGGER.info("Checking of instanceGroup: {}", instanceGroup.getGroupName());
+            for (InstanceMetaData metaData : instanceGroup.getAllInstanceMetaData()) {
                 Long privateId = metaData.getPrivateId();
+                LOGGER.info("InstanceMetaData metaData: privateId: {}, instanceGroupName: {}, instanceId: {}, status: {}",
+                        privateId, metaData.getInstanceGroupName(), metaData.getInstanceId(), metaData.getInstanceStatus());
                 if (privateId == null) {
                     continue;
                 }
@@ -153,6 +161,7 @@ public class StackToCloudStackConverter {
                 }
             }
         }
+        LOGGER.info("highest privateId: {}", highest);
         return highest == 0 ? 0 : highest + 1;
     }
 

@@ -1,6 +1,7 @@
 package com.sequenceiq.cloudbreak.api.model;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
@@ -44,13 +45,20 @@ public class ClusterResponse {
     private Long sssdConfigId;
     private Set<HostGroupJson> hostGroups;
     private AmbariStackDetailsJson ambariStackDetails;
-    private RDSConfigJson rdsConfigJson;
+    @ApiModelProperty(ClusterModelDescription.RDSCONFIG_ID)
+    private Long rdsConfigId;
     @ApiModelProperty(ClusterModelDescription.SERVICE_ENDPOINT_MAP)
     private Map<String, String> serviceEndPoints = new HashMap<>();
     @ApiModelProperty(ClusterModelDescription.CONFIG_STRATEGY)
     private ConfigStrategy configStrategy;
     @ApiModelProperty(ClusterModelDescription.ENABLE_SHIPYARD)
     private Boolean enableShipyard;
+    @ApiModelProperty(value = ClusterModelDescription.LDAP_CONFIG_ID)
+    private Long ldapConfigId;
+    @ApiModelProperty(ClusterModelDescription.CLUSTER_ATTRIBUTES)
+    private Map<String, Object> attributes;
+    @ApiModelProperty(value = ClusterModelDescription.BLUEPRINT_INPUTS)
+    private Set<BlueprintInputJson> blueprintInputs = new HashSet<>();
 
     public Boolean getEnableShipyard() {
         return enableShipyard;
@@ -181,12 +189,12 @@ public class ClusterResponse {
         this.ambariStackDetails = ambariStackDetails;
     }
 
-    public RDSConfigJson getRdsConfigJson() {
-        return rdsConfigJson;
+    public Long getRdsConfigId() {
+        return rdsConfigId;
     }
 
-    public void setRdsConfigJson(RDSConfigJson rdsConfigJson) {
-        this.rdsConfigJson = rdsConfigJson;
+    public void setRdsConfigId(Long rdsConfigId) {
+        this.rdsConfigId = rdsConfigId;
     }
 
     public String getUserName() {
@@ -219,5 +227,29 @@ public class ClusterResponse {
 
     public void setConfigStrategy(ConfigStrategy configStrategy) {
         this.configStrategy = configStrategy;
+    }
+
+    public Long getLdapConfigId() {
+        return ldapConfigId;
+    }
+
+    public void setLdapConfigId(Long ldapConfigId) {
+        this.ldapConfigId = ldapConfigId;
+    }
+
+    public Map<String, Object> getAttributes() {
+        return attributes;
+    }
+
+    public void setAttributes(Map<String, Object> attributes) {
+        this.attributes = attributes;
+    }
+
+    public Set<BlueprintInputJson> getBlueprintInputs() {
+        return blueprintInputs;
+    }
+
+    public void setBlueprintInputs(Set<BlueprintInputJson> blueprintInputs) {
+        this.blueprintInputs = blueprintInputs;
     }
 }

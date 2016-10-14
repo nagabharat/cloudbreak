@@ -126,7 +126,6 @@ public class DefaultStackHostServiceTypeTest {
         verify(flowManager, times(1)).triggerStackStop(anyObject());
     }
 
-
     @Test(expected = BadRequestException.class)
     public void updateStatusTestStopWhenClusterAndStackAvailableThenBadRequestExceptionDropping() {
         Stack stack = stack(AVAILABLE, AVAILABLE);
@@ -177,6 +176,15 @@ public class DefaultStackHostServiceTypeTest {
     @Test(expected = BadRequestException.class)
     public void updateStatusTestStopWhenClusterAndStackAvailableAndEphemeralThenBadRequestExceptionDropping() {
         Stack stack = TestUtil.setEphemeral(TestUtil.stack(AVAILABLE, TestUtil.awsCredential()));
+        given(stackRepository.findOneWithLists(anyLong())).willReturn(stack);
+        given(clusterRepository.findOneWithLists(anyLong())).willReturn(stack.getCluster());
+        given(stackUpdater.updateStackStatus(anyLong(), any(Status.class))).willReturn(stack);
+        underTest.updateStatus(1L, StatusRequest.STOPPED);
+    }
+
+    @Test(expected = BadRequestException.class)
+    public void updateStatusTestStopWhenClusterAndStackAvailableAndSpotInstancesThenBadRequestExceptionDropping() {
+        Stack stack = TestUtil.setSpotInstances(TestUtil.stack(AVAILABLE, TestUtil.awsCredential()));
         given(stackRepository.findOneWithLists(anyLong())).willReturn(stack);
         given(clusterRepository.findOneWithLists(anyLong())).willReturn(stack.getCluster());
         given(stackUpdater.updateStackStatus(anyLong(), any(Status.class))).willReturn(stack);

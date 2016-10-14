@@ -79,6 +79,7 @@ angular.module('uluwatuControllers').controller('clusterController', ['$scope', 
             $scope.configureHostGroups = false;
             $scope.configureFailureAction = false;
             $scope.configureAmbariRepository = false;
+            $scope.configureAmbariDatabase = false;
             $scope.configureSecurity = false;
             $scope.configureFileSystem = false;
             $scope.configureCluster = true;
@@ -89,6 +90,7 @@ angular.module('uluwatuControllers').controller('clusterController', ['$scope', 
             $scope.configureHostGroups = false;
             $scope.configureFailureAction = false;
             $scope.configureAmbariRepository = false;
+            $scope.configureAmbariDatabase = false;
             $scope.configureSecurity = false;
             $scope.configureFileSystem = false;
             $scope.configureCluster = false;
@@ -100,6 +102,8 @@ angular.module('uluwatuControllers').controller('clusterController', ['$scope', 
                 $scope.configureFailureAction = true;
             } else if (element == 'configureAmbariRepository') {
                 $scope.configureAmbariRepository = true;
+            } else if (element == 'configureAmbariDatabase') {
+                $scope.configureAmbariDatabase = true;
             } else if (element == 'configureSecurity') {
                 $scope.configureSecurity = true;
             } else if (element == 'configureFileSystem') {
@@ -299,7 +303,7 @@ angular.module('uluwatuControllers').controller('clusterController', ['$scope', 
                         }
                     });
                 }
-                tmpNodeCount += hg.nodeCount;
+                tmpNodeCount += hg.constraint.hostCount;
             });
 
             if (blueprint.hostGroupCount > tmpNodeCount) {
@@ -361,6 +365,11 @@ angular.module('uluwatuControllers').controller('clusterController', ['$scope', 
             } else {
                 $scope.cluster.ambariStackDetails = null;
             }
+
+            if (typeof($scope.cluster.ambariDatabaseDetails) !== "undefined" && !$scope.cluster.ambariDatabaseDetails.vendor) {
+                delete $scope.cluster.ambariDatabaseDetails;
+            }
+
             if ($scope.activeCredential) {
                 $scope.cluster.credentialId = $rootScope.activeCredential.id;
                 $scope.prepareParameters($scope.cluster);
@@ -413,7 +422,8 @@ angular.module('uluwatuControllers').controller('clusterController', ['$scope', 
                     validateBlueprint: $scope.cluster.validateBlueprint,
                     fileSystem: $scope.cluster.fileSystem || null,
                     configStrategy: $scope.cluster.configStrategy || null,
-                    ambariStackDetails: $scope.cluster.ambariStackDetails === 'undefined' ? null : $scope.cluster.ambariStackDetails
+                    ambariStackDetails: $scope.cluster.ambariStackDetails === 'undefined' ? null : $scope.cluster.ambariStackDetails,
+                    ambariDatabaseDetails: $scope.cluster.ambariDatabaseDetails === 'undefined' ? null : $scope.cluster.ambariDatabaseDetails
                 }
                 Cluster.save({
                     id: $scope.activeStack.id
@@ -564,9 +574,13 @@ angular.module('uluwatuControllers').controller('clusterController', ['$scope', 
                         id: $rootScope.activeCluster.blueprintId.toString()
                     }, true)[0];
                     if (typeof($rootScope.activeCluster.credentialId) !== "undefined" && $rootScope.activeCluster.credentialId) {
-                        $rootScope.activeClusterCredential = $filter('filter')($rootScope.credentials, { id: $rootScope.activeCluster.credentialId}, true)[0];
-                        if (typeof($rootScope.activeClusterCredential) !== "undefined") {
-                            $rootScope.activeCluster.cloudPlatform = $rootScope.activeClusterCredential.cloudPlatform
+                        if ($rootScope.activeCluster.cloudPlatform) {
+                            $rootScope.activeClusterCredential = $filter('filter')($rootScope.credentials, {
+                                id: $rootScope.activeCluster.credentialId
+                            }, true)[0];
+                            if (typeof($rootScope.activeClusterCredential) !== "undefined") {
+                                $rootScope.activeCluster.cloudPlatform = $rootScope.activeClusterCredential.cloudPlatform
+                            }
                         }
                     } else {
                         $rootScope.activeCluster.cloudPlatform = $rootScope.activeCluster.orchestrator.type
@@ -1153,6 +1167,12 @@ angular.module('uluwatuControllers').controller('clusterController', ['$scope', 
                 }
             });
             return result
+        }
+
+        $scope.noProxyBeforeAmbari = function() {
+            return $rootScope.activeCluster.orchestrator.type === 'MARATHON'
+            || $rootScope.activeCluster.cloudbreakDetails === null
+            || !$rootScope.activeCluster.cloudbreakDetails
         }
     }
 ]);

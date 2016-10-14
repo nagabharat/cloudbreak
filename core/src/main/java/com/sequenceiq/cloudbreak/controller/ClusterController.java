@@ -3,6 +3,7 @@ package com.sequenceiq.cloudbreak.controller;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import javax.ws.rs.core.Response;
@@ -16,13 +17,18 @@ import org.springframework.stereotype.Controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.sequenceiq.cloudbreak.api.endpoint.ClusterEndpoint;
+import com.sequenceiq.cloudbreak.api.model.AmbariDatabaseDetailsJson;
 import com.sequenceiq.cloudbreak.api.model.AmbariRepoDetailsJson;
 import com.sequenceiq.cloudbreak.api.model.AmbariStackDetailsJson;
 import com.sequenceiq.cloudbreak.api.model.ClusterRequest;
 import com.sequenceiq.cloudbreak.api.model.ClusterResponse;
+import com.sequenceiq.cloudbreak.api.model.ConfigsRequest;
+import com.sequenceiq.cloudbreak.api.model.ConfigsResponse;
 import com.sequenceiq.cloudbreak.api.model.HostGroupJson;
+import com.sequenceiq.cloudbreak.api.model.IdJson;
 import com.sequenceiq.cloudbreak.api.model.UpdateClusterJson;
 import com.sequenceiq.cloudbreak.api.model.UserNamePasswordJson;
+import com.sequenceiq.cloudbreak.cloud.model.AmbariDatabase;
 import com.sequenceiq.cloudbreak.cloud.model.AmbariRepo;
 import com.sequenceiq.cloudbreak.cloud.model.HDPRepo;
 import com.sequenceiq.cloudbreak.common.type.CloudConstants;
@@ -36,6 +42,7 @@ import com.sequenceiq.cloudbreak.domain.CbUser;
 import com.sequenceiq.cloudbreak.domain.Cluster;
 import com.sequenceiq.cloudbreak.domain.Component;
 import com.sequenceiq.cloudbreak.domain.HostGroup;
+import com.sequenceiq.cloudbreak.domain.RDSConfig;
 import com.sequenceiq.cloudbreak.domain.Stack;
 import com.sequenceiq.cloudbreak.domain.json.Json;
 import com.sequenceiq.cloudbreak.logger.MDCBuilder;
@@ -43,6 +50,7 @@ import com.sequenceiq.cloudbreak.service.ComponentConfigProvider;
 import com.sequenceiq.cloudbreak.service.cluster.ClusterService;
 import com.sequenceiq.cloudbreak.service.decorator.Decorator;
 import com.sequenceiq.cloudbreak.service.hostgroup.HostGroupService;
+import com.sequenceiq.cloudbreak.service.rdsconfig.RdsConfigService;
 import com.sequenceiq.cloudbreak.service.sssdconfig.SssdConfigService;
 import com.sequenceiq.cloudbreak.service.stack.StackService;
 
@@ -85,14 +93,17 @@ public class ClusterController implements ClusterEndpoint {
     private SssdConfigService sssdConfigService;
 
     @Autowired
+    private RdsConfigService rdsConfigService;
+
+    @Autowired
     private ComponentConfigProvider componentConfigProvider;
 
     @Override
-    public Response post(Long stackId, ClusterRequest request) throws Exception {
+    public IdJson post(Long stackId, ClusterRequest request) throws Exception {
         CbUser user = authenticatedUserService.getCbUser();
         if (request.getEnableSecurity()
                 && (request.getKerberosMasterKey() == null || request.getKerberosAdmin() == null || request.getKerberosPassword() == null)) {
-            return Response.status(Response.Status.ACCEPTED).build();
+            throw new BadRequestException("If the security is enabled the kerberos parameters cannot be empty");
         }
         MDCBuilder.buildUserMdcContext(user);
         Stack stack = stackService.getById(stackId);
@@ -100,18 +111,30 @@ public class ClusterController implements ClusterEndpoint {
             throw new BadRequestException("Stack is not in 'AVAILABLE' status, cannot create cluster now.");
         }
         fileSystemValidator.validateFileSystem(stack.cloudPlatform(), request.getFileSystem());
-        rdsConnectionValidator.validateRdsConnection(request.getRdsConfigJson());
+        validateRdsConfigParams(request);
+        if (request.getRdsConfigJson() != null) {
+            validateRdsConnection(request);
+            RDSConfig rdsConfig = rdsConfigService.create(user, conversionService.convert(request.getRdsConfigJson(), RDSConfig.class));
+            request.setRdsConfigId(rdsConfig.getId());
+        }
         Cluster cluster = conversionService.convert(request, Cluster.class);
         cluster = clusterDecorator.decorate(cluster, stackId, user, request.getBlueprintId(), request.getHostGroups(), request.getValidateBlueprint(),
-                request.getSssdConfigId());
+                request.getSssdConfigId(), request.getRdsConfigId(), request.getLdapConfigId());
         if (cluster.isLdapRequired() && cluster.getSssdConfig() == null) {
             cluster.setSssdConfig(sssdConfigService.getDefaultSssdConfig(user));
         }
         List<Component> components = new ArrayList<>();
         components = addAmbariRepoConfig(components, request, stack);
         components = addHDPRepoConfig(components, request, stack);
+        components = addAmbariDatabaseConfig(components, request, stack);
         clusterService.create(user, stackId, cluster, components);
-        return Response.status(Response.Status.ACCEPTED).build();
+        return new IdJson(cluster.getId());
+    }
+
+    private void validateRdsConnection(ClusterRequest request) {
+        if (request.getRdsConfigJson().isValidated()) {
+            rdsConnectionValidator.validateRdsConnection(request.getRdsConfigJson());
+        }
     }
 
     @Override
@@ -182,6 +205,13 @@ public class ClusterController implements ClusterEndpoint {
         throw new BadRequestException("Invalid update cluster request!");
     }
 
+    @Override
+    public ConfigsResponse getConfigs(Long stackId, ConfigsRequest requests) throws Exception {
+        CbUser user = authenticatedUserService.getCbUser();
+        MDCBuilder.buildUserMdcContext(user);
+        return clusterService.retrieveOutputs(stackId, requests.getRequests());
+    }
+
     private List<Component> addAmbariRepoConfig(List<Component> components, ClusterRequest request, Stack stack) throws JsonProcessingException {
         // If it is not predefined in image catalog
         if (componentConfigProvider.getAmbariRepo(stack.getId()) == null) {
@@ -205,6 +235,18 @@ public class ClusterController implements ClusterEndpoint {
                 components.add(component);
             }
         }
+        return components;
+    }
+
+    private List<Component> addAmbariDatabaseConfig(List<Component> components, ClusterRequest request, Stack stack) throws JsonProcessingException {
+        AmbariDatabaseDetailsJson ambariRepoDetailsJson = request.getAmbariDatabaseDetails();
+        if (ambariRepoDetailsJson == null) {
+            ambariRepoDetailsJson = new AmbariDatabaseDetailsJson();
+        }
+        AmbariDatabase ambariDatabase = conversionService.convert(ambariRepoDetailsJson, AmbariDatabase.class);
+        Component component = new Component(ComponentType.AMBARI_DATABASE_DETAILS, ComponentType.AMBARI_DATABASE_DETAILS.name(), new Json(ambariDatabase),
+                stack);
+        components.add(component);
         return components;
     }
 
@@ -248,6 +290,11 @@ public class ClusterController implements ClusterEndpoint {
                     "Stack '%s' is currently in '%s' state. PUT requests to a cluster can only be made if the underlying stack is 'AVAILABLE'.", stackId,
                     stack.getStatus()));
         }
+        if (Optional.ofNullable(userNamePasswordJson.getOldPassword()).orElse("").isEmpty()) {
+            throw new BadRequestException(String.format("The old password of the Stack '%s' is missing.", stackId));
+        } else if (Optional.ofNullable(userNamePasswordJson.getPassword()).orElse("").isEmpty()) {
+            throw new BadRequestException(String.format("The new password of the Stack '%s' is missing.", stackId));
+        }
         if (!userNamePasswordJson.getOldPassword().equals(stack.getCluster().getPassword())) {
             throw new BadRequestException(String.format(
                     "Cluster actual password does not match in the request, please pass the real password on Stack '%s' with status '%s'.", stackId,
@@ -256,5 +303,11 @@ public class ClusterController implements ClusterEndpoint {
         LOGGER.info("Cluster username password update request received. Stack id:  {}, username: {}, password: {}",
                 stackId, userNamePasswordJson.getUserName(), userNamePasswordJson.getPassword());
         clusterService.updateUserNamePassword(stackId, userNamePasswordJson);
+    }
+
+    private void validateRdsConfigParams(ClusterRequest request) {
+        if (request.getRdsConfigJson() != null && request.getRdsConfigId() != null) {
+            throw new BadRequestException("Both rdsConfig and rdsConfigId cannot be set in the same request.");
+        }
     }
 }

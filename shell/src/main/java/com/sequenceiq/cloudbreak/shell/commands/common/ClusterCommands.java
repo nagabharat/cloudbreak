@@ -61,19 +61,22 @@ public class ClusterCommands implements BaseCommands {
                     help = "Ambari repo base url: http://public-repo-1.hortonworks.com/ambari/centos6/2.x/updates") String ambariRepoBaseURL,
             @CliOption(key = "ambariRepoGpgKey",
                     help = "Ambari repo GPG key url") String ambariRepoGpgKey,
-            @CliOption(key = "stack", help = "Stack definition name, like HDP") String stack,
-            @CliOption(key = "version", help = "Stack definition version") String version,
-            @CliOption(key = "os", help = "Stack OS to select package manager, default is RedHat") String os,
-            @CliOption(key = "stackRepoId", help = "Stack repository id") String stackRepoId,
-            @CliOption(key = "stackBaseURL", help = "Stack url") String stackBaseURL,
-            @CliOption(key = "utilsRepoId", help = "Stack utils repoId") String utilsRepoId,
-            @CliOption(key = "utilsBaseURL", help = "Stack utils URL") String utilsBaseURL,
-            @CliOption(key = "verify", help = "Whether to verify the URLs or not") Boolean verify,
-            @CliOption(key = "connectionURL", help = "JDBC connection URL (jdbc:<db-type>://<address>:<port>/<db>)") String connectionURL,
-            @CliOption(key = "databaseType", help = "Type of the external database (MYSQL, POSTGRES)") RDSDatabase databaseType,
-            @CliOption(key = "connectionUserName", help = "Username to use for the jdbc connection") String connectionUserName,
-            @CliOption(key = "connectionPassword", help = "Password to use for the jdbc connection") String connectionPassword,
-            @CliOption(key = "enableSecurity", specifiedDefaultValue = "true", unspecifiedDefaultValue = "false",
+            @CliOption(key = "stack", mandatory = false, help = "Stack definition name, like HDP") String stack,
+            @CliOption(key = "version", mandatory = false, help = "Stack definition version") String version,
+            @CliOption(key = "os", mandatory = false, help = "Stack OS to select package manager, default is RedHat") String os,
+            @CliOption(key = "stackRepoId", mandatory = false, help = "Stack repository id") String stackRepoId,
+            @CliOption(key = "stackBaseURL", mandatory = false, help = "Stack url") String stackBaseURL,
+            @CliOption(key = "utilsRepoId", mandatory = false, help = "Stack utils repoId") String utilsRepoId,
+            @CliOption(key = "utilsBaseURL", mandatory = false, help = "Stack utils URL") String utilsBaseURL,
+            @CliOption(key = "verify", mandatory = false, help = "Whether to verify the URLs or not") Boolean verify,
+            @CliOption(key = "connectionURL", mandatory = false, help = "JDBC connection URL (jdbc:<db-type>://<address>:<port>/<db>)") String connectionURL,
+            @CliOption(key = "databaseType", mandatory = false, help = "Type of the external database (MYSQL, POSTGRES)") RDSDatabase databaseType,
+            @CliOption(key = "connectionUserName", mandatory = false, help = "Username to use for the jdbc connection") String connectionUserName,
+            @CliOption(key = "connectionPassword", mandatory = false, help = "Password to use for the jdbc connection") String connectionPassword,
+            @CliOption(key = "hdpVersion", mandatory = false, help = "Compatible HDP version for the jdbc configuration") String hdpVersion,
+            @CliOption(key = "validated", mandatory = false, unspecifiedDefaultValue = "true", specifiedDefaultValue = "true",
+                    help = "the jdbc config parameters will be validated") Boolean validated,
+            @CliOption(key = "enableSecurity", mandatory = false, specifiedDefaultValue = "true", unspecifiedDefaultValue = "false",
                     help = "Kerberos security status") Boolean enableSecurity,
             @CliOption(key = "kerberosMasterKey", specifiedDefaultValue = "key", help = "Kerberos mater key") String kerberosMasterKey,
             @CliOption(key = "kerberosAdmin", specifiedDefaultValue = "admin", help = "Kerberos admin name") String kerberosAdmin,
@@ -116,6 +119,7 @@ public class ClusterCommands implements BaseCommands {
             clusterRequest.setEmailNeeded(false);
             clusterRequest.setEnableSecurity(enableSecurity);
             clusterRequest.setHostGroups(hostGroupList);
+            clusterRequest.setBlueprintInputs(new HashSet<>());
 
             if (strategy != null) {
                 clusterRequest.setConfigStrategy(strategy);
@@ -139,6 +143,17 @@ public class ClusterCommands implements BaseCommands {
             if (shellContext.getSssdConfigId() != null) {
                 clusterRequest.setSssdConfigId(Long.valueOf(shellContext.getSssdConfigId()));
             }
+            if (shellContext.getRdsConfigId() != null) {
+                if (connectionURL != null || connectionUserName != null || connectionPassword != null || databaseType != null || hdpVersion != null) {
+                    return "--connectionURL, --databaseType, --connectionUserName, --connectionPassword switches "
+                            + "cannot be used if an RDS config is already selected with 'rdsconfig select'";
+                }
+                clusterRequest.setRdsConfigId(Long.valueOf(shellContext.getRdsConfigId()));
+            }
+            String ldapConfigId = shellContext.getLdapConfigId();
+            if (ldapConfigId != null) {
+                clusterRequest.setLdapConfigId(Long.valueOf(ldapConfigId));
+            }
             clusterRequest.setValidateBlueprint(false);
 
             if (ambariVersion != null || ambariRepoBaseURL != null || ambariRepoGpgKey != null) {
@@ -150,6 +165,10 @@ public class ClusterCommands implements BaseCommands {
                 ambariRepoDetailsJson.setBaseUrl(ambariRepoBaseURL);
                 ambariRepoDetailsJson.setGpgKeyUrl(ambariRepoGpgKey);
                 clusterRequest.setAmbariRepoDetailsJson(ambariRepoDetailsJson);
+            }
+
+            if (shellContext.getAmbariDatabaseDetailsJson() != null) {
+                clusterRequest.setAmbariDatabaseDetails(shellContext.getAmbariDatabaseDetailsJson());
             }
 
             AmbariStackDetailsJson ambariStackDetailsJson = new AmbariStackDetailsJson();
@@ -168,21 +187,25 @@ public class ClusterCommands implements BaseCommands {
             }
             clusterRequest.setAmbariStackDetails(ambariStackDetailsJson);
 
-            if (connectionURL != null && connectionUserName != null && connectionPassword != null && databaseType != null) {
+            if (connectionURL != null && connectionUserName != null && connectionPassword != null && databaseType != null && hdpVersion != null) {
                 RDSConfigJson rdsConfigJson = new RDSConfigJson();
+                rdsConfigJson.setName(clusterRequest.getName());
                 rdsConfigJson.setConnectionURL(connectionURL);
                 rdsConfigJson.setDatabaseType(databaseType);
                 rdsConfigJson.setConnectionUserName(connectionUserName);
                 rdsConfigJson.setConnectionPassword(connectionPassword);
+                rdsConfigJson.setHdpVersion(hdpVersion);
+                rdsConfigJson.setValidated(validated);
                 clusterRequest.setRdsConfigJson(rdsConfigJson);
-            } else if (connectionURL != null || connectionUserName != null || connectionPassword != null || databaseType != null) {
-                return "connectionURL, databaseType, connectionUserName and connectionPassword must be all set.";
+            } else if (connectionURL != null || connectionUserName != null || connectionPassword != null || databaseType != null || hdpVersion != null) {
+                return "connectionURL, databaseType, connectionUserName, connectionPassword and hdpVersion must be all set.";
             }
 
             String stackId = shellContext.isMarathonMode() ? shellContext.getSelectedMarathonStackId().toString() : shellContext.getStackId();
-            cloudbreakShellUtil.checkResponse("createCluster", shellContext.cloudbreakClient().clusterEndpoint().post(Long.valueOf(stackId), clusterRequest));
+            shellContext.cloudbreakClient().clusterEndpoint().post(Long.valueOf(stackId), clusterRequest);
             shellContext.setHint(Hints.NONE);
             shellContext.resetFileSystemConfiguration();
+            shellContext.resetAmbariDatabaseDetailsJson();
             if (wait) {
                 CloudbreakShellUtil.WaitResult waitResult =
                         cloudbreakShellUtil.waitAndCheckClusterStatus(Long.valueOf(stackId), Status.AVAILABLE.name());
@@ -233,13 +256,13 @@ public class ClusterCommands implements BaseCommands {
     }
 
     @Override
-    public boolean deleteAvailable() {
-        return false;
-    }
-
-    @Override
     public String delete(Long id, String name) throws Exception {
         throw new MethodNotSupportedException("Cluster delete command not available");
+    }
+
+    @CliAvailabilityIndicator(value = {"cluster delete"})
+    public boolean deleteAvailable() {
+        return shellContext.isStackAvailable() || (shellContext.isMarathonMode() && shellContext.isSelectedMarathonStackAvailable());
     }
 
     @CliCommand(value = "cluster delete", help = "Delete the cluster by stack id")
@@ -293,7 +316,7 @@ public class ClusterCommands implements BaseCommands {
         throw new MethodNotSupportedException("Cluster list command not available");
     }
 
-    @CliAvailabilityIndicator(value = {"cluster show --id", "cluster show --name"})
+    @CliAvailabilityIndicator(value = {"cluster show", "cluster show --id", "cluster show --name"})
     @Override
     public boolean showAvailable() {
         return shellContext.isStackAvailable() || (shellContext.isMarathonMode() && shellContext.isSelectedMarathonStackAvailable());
@@ -327,7 +350,7 @@ public class ClusterCommands implements BaseCommands {
         return show(null, name);
     }
 
-    @CliAvailabilityIndicator(value = {"cluster node"})
+    @CliAvailabilityIndicator(value = {"cluster node --ADD", "cluster node --REMOVE"})
     public boolean nodeAvailable() {
         return shellContext.isStackAvailable() || (shellContext.isMarathonMode() && shellContext.isSelectedMarathonStackAvailable());
     }
@@ -354,7 +377,7 @@ public class ClusterCommands implements BaseCommands {
             String stackId = shellContext.isMarathonMode() ? shellContext.getSelectedMarathonStackId().toString() : shellContext.getStackId();
             cloudbreakShellUtil.checkResponse("upscaleCluster",
                     shellContext.cloudbreakClient().clusterEndpoint().put(Long.valueOf(stackId), updateClusterJson));
-            return shellContext.getStackId();
+            return "Cluster upscale started with stack id: " + shellContext.getStackId();
         } catch (Exception ex) {
             throw shellContext.exceptionTransformer().transformToRuntimeException(ex);
         }
@@ -378,7 +401,7 @@ public class ClusterCommands implements BaseCommands {
             String stackId = shellContext.isMarathonMode() ? shellContext.getSelectedMarathonStackId().toString() : shellContext.getStackId();
             cloudbreakShellUtil.checkResponse("downscaleCluster",
                     shellContext.cloudbreakClient().clusterEndpoint().put(Long.valueOf(stackId), updateClusterJson));
-            return shellContext.getStackId();
+            return "Cluster downscale started with stack id: " + shellContext.getStackId();
         } catch (Exception ex) {
             throw shellContext.exceptionTransformer().transformToRuntimeException(ex);
         }

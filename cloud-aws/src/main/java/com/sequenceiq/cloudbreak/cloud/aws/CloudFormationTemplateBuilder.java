@@ -1,7 +1,6 @@
 package com.sequenceiq.cloudbreak.cloud.aws;
 
 import static com.sequenceiq.cloudbreak.util.FreeMarkerTemplateUtils.processTemplateIntoString;
-import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isNoneEmpty;
 
 import java.io.IOException;
@@ -14,14 +13,14 @@ import javax.inject.Inject;
 
 import org.springframework.stereotype.Service;
 
-import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.Lists;
 import com.sequenceiq.cloudbreak.cloud.aws.view.AwsGroupView;
 import com.sequenceiq.cloudbreak.cloud.aws.view.AwsInstanceProfileView;
+import com.sequenceiq.cloudbreak.cloud.aws.view.AwsInstanceView;
 import com.sequenceiq.cloudbreak.cloud.context.AuthenticatedContext;
 import com.sequenceiq.cloudbreak.cloud.exception.CloudConnectorException;
 import com.sequenceiq.cloudbreak.cloud.model.CloudStack;
 import com.sequenceiq.cloudbreak.cloud.model.Group;
-import com.sequenceiq.cloudbreak.cloud.model.InstanceTemplate;
 
 import freemarker.template.Configuration;
 import freemarker.template.TemplateException;
@@ -33,23 +32,21 @@ public class CloudFormationTemplateBuilder {
 
     public String build(ModelContext context) {
         Map<String, Object> model = new HashMap<>();
-        AwsInstanceProfileView awsInstanceProfileView = new AwsInstanceProfileView(context.stack.getParameters());
+        AwsInstanceProfileView awsInstanceProfileView = new AwsInstanceProfileView(context.stack);
         List<AwsGroupView> awsGroupViews = new ArrayList<>();
         for (Group group : context.stack.getGroups()) {
-            InstanceTemplate instanceTemplate = group.getInstances().get(0).getTemplate();
-            Boolean encrypted = instanceTemplate.getParameter("encrypted", Boolean.class);
-            encrypted = encrypted == null ? Boolean.FALSE : encrypted;
+            AwsInstanceView awsInstanceView = new AwsInstanceView(group.getInstances().get(0).getTemplate());
             awsGroupViews.add(
                     new AwsGroupView(
                             group.getInstances().size(),
                             group.getType().name(),
-                            instanceTemplate.getFlavor(),
+                            awsInstanceView.getFlavor(),
                             group.getName(),
-                            instanceTemplate.getVolumes().size(),
-                            encrypted.equals(Boolean.TRUE),
-                            instanceTemplate.getVolumeSize(),
-                            instanceTemplate.getVolumeType(),
-                            getSpotPrice(instanceTemplate),
+                            awsInstanceView.getVolumes().size(),
+                            awsInstanceView.isEncryptedVolumes(),
+                            awsInstanceView.getVolumeSize(),
+                            awsInstanceView.getVolumeType(),
+                            awsInstanceView.getSpotPrice(),
                             group.getSecurity().getRules()
                     )
             );
@@ -57,10 +54,18 @@ public class CloudFormationTemplateBuilder {
         model.put("instanceGroups", awsGroupViews);
         model.put("existingVPC", context.existingVPC);
         model.put("existingIGW", context.existingIGW);
-        model.put("existingSubnet", isNoneEmpty(context.existingSubnetCidr));
+        model.put("existingSubnet", !isNullOrEmptyList(context.existingSubnetCidr));
         model.put("enableInstanceProfile", context.enableInstanceProfile || context.s3RoleAvailable);
         model.put("existingRole", context.s3RoleAvailable);
-        model.put("cbSubnet", isBlank(context.existingSubnetCidr) ? context.stack.getNetwork().getSubnet().getCidr() : context.existingSubnetCidr);
+        model.put("cbSubnet", (isNullOrEmptyList(context.existingSubnetCidr)) ? Lists.newArrayList(context.defaultSubnet)
+                : context.existingSubnetCidr);
+        if (isNoneEmpty(context.cloudbreakPublicIp)) {
+            model.put("cloudbreakPublicIp", context.cloudbreakPublicIp);
+        }
+        if (isNoneEmpty(context.defaultInboundSecurityGroup)) {
+            model.put("defaultInboundSecurityGroup", context.defaultInboundSecurityGroup);
+        }
+        model.put("gatewayPort", context.gatewayPort);
         model.put("dedicatedInstances", areDedicatedInstancesRequested(context.stack));
         model.put("availabilitySetNeeded", context.ac.getCloudContext().getLocation().getAvailabilityZone().value() != null);
         model.put("mapPublicIpOnLaunch", context.mapPublicIpOnLaunch);
@@ -78,6 +83,10 @@ public class CloudFormationTemplateBuilder {
         }
     }
 
+    private boolean isNullOrEmptyList(List<?> list) {
+        return list == null || list.isEmpty();
+    }
+
     public boolean areDedicatedInstancesRequested(CloudStack cloudStack) {
         boolean result = false;
         if (isDedicatedInstancesParamExistAndTrue(cloudStack)) {
@@ -91,30 +100,21 @@ public class CloudFormationTemplateBuilder {
                 && Boolean.valueOf(stack.getParameters().get("dedicatedInstances"));
     }
 
-    private Double getSpotPrice(InstanceTemplate instanceTemplate) {
-        try {
-            return instanceTemplate.getParameter("spotPrice", Double.class);
-        } catch (ClassCastException e) {
-            return instanceTemplate.getParameter("spotPrice", Integer.class).doubleValue();
-        }
-    }
-
-    @VisibleForTesting
-    void setFreemarkerConfiguration(Configuration freemarkerConfiguration) {
-        this.freemarkerConfiguration = freemarkerConfiguration;
-    }
-
     public static class ModelContext {
         private AuthenticatedContext ac;
         private CloudStack stack;
         private String snapshotId;
         private boolean existingVPC;
         private boolean existingIGW;
-        private String existingSubnetCidr;
+        private List<String> existingSubnetCidr;
         private boolean mapPublicIpOnLaunch;
         private String templatePath;
         private boolean enableInstanceProfile;
         private boolean s3RoleAvailable;
+        private String defaultSubnet;
+        private String defaultInboundSecurityGroup;
+        private String cloudbreakPublicIp;
+        private int gatewayPort;
 
         public ModelContext withAuthenticatedContext(AuthenticatedContext ac) {
             this.ac = ac;
@@ -141,7 +141,7 @@ public class CloudFormationTemplateBuilder {
             return this;
         }
 
-        public ModelContext withExistingSubnetCidr(String cidr) {
+        public ModelContext withExistingSubnetCidr(List<String> cidr) {
             this.existingSubnetCidr = cidr;
             return this;
         }
@@ -163,6 +163,26 @@ public class CloudFormationTemplateBuilder {
 
         public ModelContext withTemplatePath(String templatePath) {
             this.templatePath = templatePath;
+            return this;
+        }
+
+        public ModelContext withDefaultSubnet(String subnet) {
+            this.defaultSubnet = subnet;
+            return this;
+        }
+
+        public ModelContext withCloudbreakPublicIp(String publicIp) {
+            this.cloudbreakPublicIp = publicIp;
+            return this;
+        }
+
+        public ModelContext withDefaultInboundSecurityGroup(String securityGroup) {
+            this.defaultInboundSecurityGroup = securityGroup;
+            return this;
+        }
+
+        public ModelContext withGatewayPort(int gatewayPort) {
+            this.gatewayPort = gatewayPort;
             return this;
         }
     }

@@ -3,6 +3,7 @@ package com.sequenceiq.cloudbreak.core.bootstrap.service.host;
 import static com.sequenceiq.cloudbreak.core.bootstrap.service.ClusterDeletionBasedExitCriteriaModel.clusterDeletionBasedExitCriteriaModel;
 import static java.util.Collections.singletonMap;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -13,6 +14,7 @@ import javax.inject.Inject;
 import org.springframework.core.convert.ConversionService;
 import org.springframework.stereotype.Component;
 
+import com.sequenceiq.cloudbreak.cloud.model.AmbariDatabase;
 import com.sequenceiq.cloudbreak.cloud.model.AmbariRepo;
 import com.sequenceiq.cloudbreak.cloud.scheduler.CancellationException;
 import com.sequenceiq.cloudbreak.core.CloudbreakException;
@@ -20,6 +22,7 @@ import com.sequenceiq.cloudbreak.domain.Cluster;
 import com.sequenceiq.cloudbreak.domain.HostGroup;
 import com.sequenceiq.cloudbreak.domain.InstanceGroup;
 import com.sequenceiq.cloudbreak.domain.InstanceMetaData;
+import com.sequenceiq.cloudbreak.domain.LdapConfig;
 import com.sequenceiq.cloudbreak.domain.Stack;
 import com.sequenceiq.cloudbreak.orchestrator.exception.CloudbreakOrchestratorCancelledException;
 import com.sequenceiq.cloudbreak.orchestrator.exception.CloudbreakOrchestratorException;
@@ -32,7 +35,8 @@ import com.sequenceiq.cloudbreak.repository.HostGroupRepository;
 import com.sequenceiq.cloudbreak.repository.InstanceMetaDataRepository;
 import com.sequenceiq.cloudbreak.repository.StackRepository;
 import com.sequenceiq.cloudbreak.service.ComponentConfigProvider;
-import com.sequenceiq.cloudbreak.service.TlsSecurityService;
+import com.sequenceiq.cloudbreak.service.GatewayConfigService;
+import com.sequenceiq.cloudbreak.service.blueprint.BlueprintUtils;
 import com.sequenceiq.cloudbreak.service.cluster.ClusterService;
 
 @Component
@@ -43,7 +47,7 @@ public class ClusterHostServiceRunner {
     @Inject
     private HostOrchestratorResolver hostOrchestratorResolver;
     @Inject
-    private TlsSecurityService tlsSecurityService;
+    private GatewayConfigService gatewayConfigService;
     @Inject
     private ConversionService conversionService;
     @Inject
@@ -54,15 +58,14 @@ public class ClusterHostServiceRunner {
     private InstanceMetaDataRepository instanceMetaDataRepository;
     @Inject
     private ComponentConfigProvider componentConfigProvider;
+    @Inject
+    private BlueprintUtils blueprintUtils;
 
     public void runAmbariServices(Stack stack) throws CloudbreakException {
         try {
-            InstanceGroup gateway = stack.getGatewayInstanceGroup();
             Set<Node> nodes = collectNodes(stack);
             HostOrchestrator hostOrchestrator = hostOrchestratorResolver.get(stack.getOrchestrator().getType());
-            InstanceMetaData gatewayInstance = gateway.getInstanceMetaData().iterator().next();
-            GatewayConfig gatewayConfig = tlsSecurityService.buildGatewayConfig(stack.getId(),
-                    gatewayInstance.getPublicIpWrapper(), stack.getGatewayPort(), gatewayInstance.getPrivateIp(), gatewayInstance.getDiscoveryFQDN());
+            GatewayConfig gatewayConfig = gatewayConfigService.getGatewayConfig(stack);
             Cluster cluster = stack.getCluster();
             Map<String, SaltPillarProperties> servicePillar = new HashMap<>();
             if (cluster.isSecure()) {
@@ -77,13 +80,19 @@ public class ClusterHostServiceRunner {
             servicePillar.put("discovery", new SaltPillarProperties("/discovery/init.sls", singletonMap("platform", stack.cloudPlatform())));
             AmbariRepo ambariRepo = componentConfigProvider.getAmbariRepo(stack.getId());
             if (ambariRepo != null) {
-                servicePillar.put("ambari", new SaltPillarProperties("/ambari/repo.sls", singletonMap("ambari", singletonMap("repo", ambariRepo))));
+                servicePillar.put("ambari-repo", new SaltPillarProperties("/ambari/repo.sls", singletonMap("ambari", singletonMap("repo", ambariRepo))));
+            }
+            AmbariDatabase ambariDb = componentConfigProvider.getAmbariDatabase(stack.getId());
+            servicePillar.put("ambari-database", new SaltPillarProperties("/ambari/database.sls", singletonMap("ambari", singletonMap("database", ambariDb))));
+            LdapConfig ldapConfig = cluster.getLdapConfig();
+            if (ldapConfig != null && blueprintUtils.containsComponent(cluster.getBlueprint(), "KNOX_GATEWAY")) {
+                servicePillar.put("ldap", new SaltPillarProperties("/ldap/init.sls", singletonMap("ldap", ldapConfig)));
             }
             SaltPillarConfig saltPillarConfig = new SaltPillarConfig(servicePillar);
             hostOrchestrator.runService(gatewayConfig, nodes, saltPillarConfig, clusterDeletionBasedExitCriteriaModel(stack.getId(), cluster.getId()));
         } catch (CloudbreakOrchestratorCancelledException e) {
             throw new CancellationException(e.getMessage());
-        } catch (CloudbreakOrchestratorException e) {
+        } catch (CloudbreakOrchestratorException | IOException e) {
             throw new CloudbreakException(e);
         }
     }
@@ -93,13 +102,10 @@ public class ClusterHostServiceRunner {
         try {
             Stack stack = stackRepository.findOneWithLists(stackId);
             Cluster cluster = stack.getCluster();
-            InstanceGroup gateway = stack.getGatewayInstanceGroup();
             candidates = collectUpscaleCandidates(cluster.getId(), hostGroupName, scalingAdjustment);
             Set<Node> allNodes = collectNodes(stack);
             HostOrchestrator hostOrchestrator = hostOrchestratorResolver.get(stack.getOrchestrator().getType());
-            InstanceMetaData gatewayInstance = gateway.getInstanceMetaData().iterator().next();
-            GatewayConfig gatewayConfig = tlsSecurityService.buildGatewayConfig(stack.getId(),
-                    gatewayInstance.getPublicIpWrapper(), stack.getGatewayPort(), gatewayInstance.getPrivateIp(), gatewayInstance.getDiscoveryFQDN());
+            GatewayConfig gatewayConfig = gatewayConfigService.getGatewayConfig(stack);
             hostOrchestrator.runService(gatewayConfig, allNodes, new SaltPillarConfig(), clusterDeletionBasedExitCriteriaModel(stack.getId(), cluster.getId()));
         } catch (CloudbreakOrchestratorCancelledException e) {
             throw new CancellationException(e.getMessage());

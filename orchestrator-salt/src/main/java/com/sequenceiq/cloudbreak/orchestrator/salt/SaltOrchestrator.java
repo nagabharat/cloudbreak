@@ -28,6 +28,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 import com.google.common.collect.Sets;
 import com.sequenceiq.cloudbreak.orchestrator.OrchestratorBootstrap;
@@ -72,6 +73,9 @@ public class SaltOrchestrator implements HostOrchestrator {
     @Value("${cb.smartsense.configure:false}")
     private boolean configureSmartSense;
 
+    @Value("${cb.host.discovery.custom.domain:}")
+    private String customDomain;
+
     private ParallelOrchestratorComponentRunner parallelOrchestratorComponentRunner;
     private ExitCriteria exitCriteria;
 
@@ -84,22 +88,19 @@ public class SaltOrchestrator implements HostOrchestrator {
     @Override
     public void bootstrap(GatewayConfig gatewayConfig, Set<Node> targets, ExitCriteriaModel exitCriteriaModel)
             throws CloudbreakOrchestratorException {
+        LOGGER.info("Start SaltBootstrap on nodes: {}", targets);
         try (SaltConnector sc = new SaltConnector(gatewayConfig, restDebug)) {
             uploadSaltConfig(sc);
-
-            PillarSave ambariServer = new PillarSave(sc, gatewayConfig.getPrivateAddress());
-            Callable<Boolean> saltPillarRunner = runner(ambariServer, exitCriteria, exitCriteriaModel);
-            Future<Boolean> saltPillarRunnerFuture = getParallelOrchestratorComponentRunner().submit(saltPillarRunner);
-            saltPillarRunnerFuture.get();
-
             SaltBootstrap saltBootstrap = new SaltBootstrap(sc, gatewayConfig, targets);
             Callable<Boolean> saltBootstrapRunner = runner(saltBootstrap, exitCriteria, exitCriteriaModel);
             Future<Boolean> saltBootstrapRunnerFuture = getParallelOrchestratorComponentRunner().submit(saltBootstrapRunner);
             saltBootstrapRunnerFuture.get();
+
         } catch (Exception e) {
-            LOGGER.error("Error occurred under the consul bootstrap", e);
+            LOGGER.error("Error occurred during the salt bootstrap", e);
             throw new CloudbreakOrchestratorFailedException(e);
         }
+        LOGGER.info("SaltBootstrap finished");
     }
 
     @Override
@@ -118,10 +119,16 @@ public class SaltOrchestrator implements HostOrchestrator {
     @Override
     public void runService(GatewayConfig gatewayConfig, Set<Node> allNodes, SaltPillarConfig pillarConfig,
             ExitCriteriaModel exitCriteriaModel) throws CloudbreakOrchestratorException {
+        LOGGER.info("Run Services on nodes: {}", allNodes);
         try (SaltConnector sc = new SaltConnector(gatewayConfig, restDebug)) {
-            PillarSave hostSave = new PillarSave(sc, allNodes);
-            Callable<Boolean> saltPillarRunner = runner(hostSave, exitCriteria, exitCriteriaModel);
+            PillarSave ambariServer = new PillarSave(sc, gatewayConfig.getPrivateAddress());
+            Callable<Boolean> saltPillarRunner = runner(ambariServer, exitCriteria, exitCriteriaModel);
             Future<Boolean> saltPillarRunnerFuture = getParallelOrchestratorComponentRunner().submit(saltPillarRunner);
+            saltPillarRunnerFuture.get();
+
+            PillarSave hostSave = new PillarSave(sc, allNodes, !StringUtils.isEmpty(customDomain));
+            saltPillarRunner = runner(hostSave, exitCriteria, exitCriteriaModel);
+            saltPillarRunnerFuture = getParallelOrchestratorComponentRunner().submit(saltPillarRunner);
             saltPillarRunnerFuture.get();
 
             for (Map.Entry<String, SaltPillarProperties> propertiesEntry : pillarConfig.getServicePillarConfig().entrySet()) {
@@ -148,6 +155,9 @@ public class SaltOrchestrator implements HostOrchestrator {
             if (pillarConfig.getServicePillarConfig().containsKey("kerberos")) {
                 runSaltCommand(sc, new GrainAddRunner(server, allNodes, "kerberos_server"), exitCriteriaModel);
             }
+            if (pillarConfig.getServicePillarConfig().containsKey("ldap")) {
+                runSaltCommand(sc, new GrainAddRunner(server, allNodes, "knox_gateway"), exitCriteriaModel);
+            }
             if (configureSmartSense) {
                 runSaltCommand(sc, new GrainAddRunner(server, allNodes, "smartsense"), exitCriteriaModel);
             }
@@ -157,6 +167,7 @@ public class SaltOrchestrator implements HostOrchestrator {
             LOGGER.error("Error occurred during ambari bootstrap", e);
             throw new CloudbreakOrchestratorFailedException(e);
         }
+        LOGGER.info("Run Servcies on nodes finished: {}", allNodes);
     }
 
     @Override
@@ -238,8 +249,7 @@ public class SaltOrchestrator implements HostOrchestrator {
 
     @Override
     public boolean isBootstrapApiAvailable(GatewayConfig gatewayConfig) {
-        SaltConnector saltConnector = new SaltConnector(gatewayConfig, restDebug);
-        try {
+        try (SaltConnector saltConnector = new SaltConnector(gatewayConfig, restDebug)) {
             if (saltConnector.health().getStatusCode() == HttpStatus.OK.value()) {
                 return true;
             }
@@ -257,6 +267,15 @@ public class SaltOrchestrator implements HostOrchestrator {
     @Override
     public int getMaxBootstrapNodes() {
         return MAX_NODES;
+    }
+
+    @Override
+    public Map<String, String> getMembers(GatewayConfig gatewayConfig, List<String> privateIps) throws CloudbreakOrchestratorException {
+        try (SaltConnector saltConnector = new SaltConnector(gatewayConfig, restDebug)) {
+            return saltConnector.members(privateIps);
+        } catch (IOException e) {
+            throw new CloudbreakOrchestratorFailedException(e);
+        }
     }
 
     private void runNewService(SaltConnector sc, BaseSaltJobRunner baseSaltJobRunner, ExitCriteriaModel exitCriteriaModel) throws ExecutionException,
@@ -305,7 +324,7 @@ public class SaltOrchestrator implements HostOrchestrator {
 
     private void uploadSaltConfig(SaltConnector saltConnector) throws IOException {
         byte[] byteArray = zipSaltConfig();
-        LOGGER.info("Upload salt.zip to /tmp/salt.zip");
+        LOGGER.info("Upload salt.zip to server");
         saltConnector.upload("/srv", "salt.zip", new ByteArrayInputStream(byteArray));
     }
 

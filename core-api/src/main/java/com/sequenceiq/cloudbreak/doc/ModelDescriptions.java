@@ -10,6 +10,8 @@ public class ModelDescriptions {
     public static final String OWNER = "id of the resource owner that is provided by OAuth provider";
     public static final String ACCOUNT = "account id of the resource owner that is provided by OAuth provider";
     public static final String TOPOLOGY_ID = "id of the topology the resource belongs to";
+    public static final String REQUESTS = "request object";
+    public static final String RESPONSE = "response object";
 
     private ModelDescriptions() {
     }
@@ -20,6 +22,8 @@ public class ModelDescriptions {
         public static final String AMBARI_BLUEPRINT = "ambari blueprint JSON, set this or the url field";
         public static final String HOST_GROUP_COUNT = "number of host groups";
         public static final String STATUS = "status of the blueprint";
+        public static final String INPUTS = "input parameters of the blueprint";
+        public static final String BLUEPRINT_PROPERTIES = "properties to extend the blueprint with";
     }
 
     public static class CredentialModelDescription {
@@ -51,7 +55,10 @@ public class ModelDescriptions {
 
     public static class ImageModelDescription {
         public static final String IMAGE_NAME = "name of the image";
-        public static final String HDPVERSION = "hdp version of image";
+    }
+
+    public static class CloudbreakDetailsModelDescription {
+        public static final String VERSION = "version of the Cloudbreak that provisioned the stack";
     }
 
     public static class StackModelDescription {
@@ -82,6 +89,7 @@ public class ModelDescriptions {
         public static final String AMBARI_VERSION = "specific version of ambari";
         public static final String HDP_VERSION = "specific version of HDP";
         public static final String IMAGE_CATALOG = "custom image catalog URL";
+        public static final String CLOUDBREAK_DETAILS = "details of the Cloudbreak that provisioned the stack";
     }
 
     public static class ClusterModelDescription {
@@ -99,12 +107,25 @@ public class ModelDescriptions {
         public static final String LDAP_REQUIRED = "flag for default LDAP support";
         public static final String SSSDCONFIG_ID = "SSSD config id for the cluster";
         public static final String ENABLE_SHIPYARD = "shipyard service enabled in the cluster";
+        public static final String BLUEPRINT_INPUTS = "blueprint inputs in the cluster";
+        public static final String CLUSTER_ATTRIBUTES = "Additional information for ambari cluster";
+        public static final String RDSCONFIG_ID = "RDS configuration id for the cluster";
+        public static final String LDAP_CONFIG_ID = "LDAP config id for the cluster";
     }
 
     public static class AmbariRepoDetailsDescription {
         public static final String VERSION = "version of the Ambari";
         public static final String AMBARI_BASE_URL = "url of the Ambari repository";
         public static final String AMBARI_REPO_GPG_KEY = "gpg key of the Ambari repository";
+    }
+
+    public static class AmbariDatabaseDetailsDescription {
+        public static final String VENDOR = "vendor of the Ambari database";
+        public static final String NAME = "name of the Ambari database";
+        public static final String HOST = "host of the Ambari database";
+        public static final String PORT = "port of the Ambari database";
+        public static final String USER_NAME = "user name for the Ambari database";
+        public static final String PASSWORD = "password for the Ambari database";
     }
 
     public static class AmbariStackDetailsDescription {
@@ -123,6 +144,11 @@ public class ModelDescriptions {
         public static final String DB_TYPE = "Type of the external database (allowed values: MYSQL, POSTGRES)";
         public static final String USERNAME = "Username to use for the jdbc connection";
         public static final String PASSWORD = "Password to use for the jdbc connection";
+        public static final String NAME = "Name of the RDS configuration resource";
+        public static final String HDPVERSION = "HDP version for the RDS configuration";
+        public static final String VALIDATED = "If true, then the RDS configuration will be validated";
+        public static final String RDSTYPE = "Type of rds (HIVE or RANGER)";
+        public static final String RDS_PROPERTIES = "custom properties for rds connection";
     }
 
     public static class FileSystem {
@@ -240,5 +266,20 @@ public class ModelDescriptions {
         public static final String CLUSTER_TIME_TO_LIVE = "lifecycle of the cluster in hours (0 for immortal clusters)";
         public static final String ACCOUNT_TIME_TO_LIVE = "lifecycle of the account and its clusters in hours (0 for immortal account)";
         public static final String PLATFORMS = "list of the cloudplatforms visible on the UI";
+    }
+
+    public static class LdapConfigModelDescription {
+        public static final String SERVER_HOST = "public host or IP address of LDAP server";
+        public static final String SERVER_PORT = "port of LDAP server (typically: 389 or 636 for LDAPS)";
+        public static final String IS_SERVER_SSL = "determines if LDAP or LDAP over SSL is to be used";
+        public static final String BIND_DN = "bind distinguished name for connection test and group search (e.g. cn=admin,dc=example,dc=org)";
+        public static final String BIND_PASSWORD = "password for the provided bind DN";
+        public static final String USER_SEARCH_BASE = "template for user search for authentication (e.g. dc=hadoop,dc=apache,dc=org)";
+        public static final String USER_SEARCH_FILTER = "filter for user search for authentication (e.g. (&amp;(objectclass=person)(sAMAccountName={2})) )";
+        public static final String GROUP_SEARCH_BASE = "template for group search for authorization (e.g. dc=hadoop,dc=apache,dc=org)";
+        public static final String GROUP_SEARCH_FILTER = "filter for group search for authorization";
+        public static final String PRINCIPAL_REGEX = "parses the principal for insertion into templates via regex.";
+
+
     }
 }

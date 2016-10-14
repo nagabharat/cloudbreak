@@ -18,6 +18,7 @@ import com.google.api.services.compute.model.Instance;
 import com.google.api.services.compute.model.Metadata;
 import com.google.api.services.compute.model.NetworkInterface;
 import com.google.api.services.compute.model.Operation;
+import com.google.api.services.compute.model.Scheduling;
 import com.google.api.services.compute.model.Tags;
 import com.sequenceiq.cloudbreak.api.model.InstanceGroupType;
 import com.sequenceiq.cloudbreak.cloud.context.AuthenticatedContext;
@@ -43,6 +44,7 @@ public class GcpInstanceResourceBuilder extends AbstractGcpComputeBuilder {
     private static final Logger LOGGER = LoggerFactory.getLogger(GcpInstanceResourceBuilder.class);
     private static final String GCP_DISK_TYPE = "PERSISTENT";
     private static final String GCP_DISK_MODE = "READ_WRITE";
+    private static final String PREEMPTIBLE = "preemptible";
 
     @Override
     public List<CloudResource> create(GcpContext context, long privateId, AuthenticatedContext auth, Group group, Image image) {
@@ -72,6 +74,13 @@ public class GcpInstanceResourceBuilder extends AbstractGcpComputeBuilder {
         instance.setCanIpForward(Boolean.TRUE);
         instance.setNetworkInterfaces(getNetworkInterface(context.getNetworkResources(), location.getRegion(), group, compute, projectId));
         instance.setDisks(listOfDisks);
+        Scheduling scheduling = new Scheduling();
+        boolean preemptible = false;
+        if (template.getParameter(PREEMPTIBLE, Boolean.class) != null) {
+            preemptible = template.getParameter(PREEMPTIBLE, Boolean.class);
+        }
+        scheduling.setPreemptible(preemptible);
+        instance.setScheduling(scheduling);
 
         Tags tags = new Tags();
         List<String> tagList = new ArrayList<>();
@@ -193,15 +202,20 @@ public class GcpInstanceResourceBuilder extends AbstractGcpComputeBuilder {
         List<CloudResource> subnet = filterResourcesByType(resources, ResourceType.GCP_SUBNET);
         String networkName = subnet.isEmpty() ? filterResourcesByType(resources, ResourceType.GCP_NETWORK).get(0).getName() : subnet.get(0).getName();
         networkInterface.setName(networkName);
-        AccessConfig accessConfig = new AccessConfig();
-        accessConfig.setName(networkName);
-        accessConfig.setType("ONE_TO_ONE_NAT");
-        if (InstanceGroupType.GATEWAY == group.getType()) {
-            Compute.Addresses.Get getReservedIp = compute.addresses().get(projectId, region.value(),
-                    filterResourcesByType(resources, ResourceType.GCP_RESERVED_IP).get(0).getName());
-            accessConfig.setNatIP(getReservedIp.execute().getAddress());
+
+        List<CloudResource> reservedIp = filterResourcesByType(resources, ResourceType.GCP_RESERVED_IP);
+        if (reservedIp != null && !reservedIp.isEmpty()) {
+            AccessConfig accessConfig = new AccessConfig();
+            accessConfig.setName(networkName);
+            accessConfig.setType("ONE_TO_ONE_NAT");
+            if (InstanceGroupType.GATEWAY == group.getType()) {
+                Compute.Addresses.Get getReservedIp = compute.addresses().get(projectId, region.value(),
+                        filterResourcesByType(resources, ResourceType.GCP_RESERVED_IP).get(0).getName());
+                accessConfig.setNatIP(getReservedIp.execute().getAddress());
+            }
+            networkInterface.setAccessConfigs(Collections.singletonList(accessConfig));
         }
-        networkInterface.setAccessConfigs(Collections.singletonList(accessConfig));
+
         if (subnet.isEmpty()) {
             networkInterface.setNetwork(
                     String.format("https://www.googleapis.com/compute/v1/projects/%s/global/networks/%s", projectId, networkName));

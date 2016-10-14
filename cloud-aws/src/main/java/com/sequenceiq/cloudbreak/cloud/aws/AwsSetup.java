@@ -21,8 +21,11 @@ import com.amazonaws.services.ec2.model.DescribeKeyPairsResult;
 import com.amazonaws.services.ec2.model.DescribeSubnetsRequest;
 import com.amazonaws.services.ec2.model.DescribeSubnetsResult;
 import com.amazonaws.services.ec2.model.DescribeVpcAttributeRequest;
+import com.amazonaws.services.ec2.model.DescribeVpcAttributeResult;
+import com.amazonaws.services.ec2.model.InstanceType;
 import com.amazonaws.services.ec2.model.InternetGateway;
 import com.amazonaws.services.ec2.model.InternetGatewayAttachment;
+import com.amazonaws.services.ec2.model.RunInstancesRequest;
 import com.amazonaws.services.ec2.model.Subnet;
 import com.amazonaws.services.ec2.model.VpcAttributeName;
 import com.amazonaws.services.identitymanagement.AmazonIdentityManagement;
@@ -42,6 +45,7 @@ import com.amazonaws.util.json.JSONObject;
 import com.sequenceiq.cloudbreak.cloud.Setup;
 import com.sequenceiq.cloudbreak.cloud.aws.view.AwsCredentialView;
 import com.sequenceiq.cloudbreak.cloud.aws.view.AwsInstanceProfileView;
+import com.sequenceiq.cloudbreak.cloud.aws.view.AwsInstanceView;
 import com.sequenceiq.cloudbreak.cloud.aws.view.AwsNetworkView;
 import com.sequenceiq.cloudbreak.cloud.context.AuthenticatedContext;
 import com.sequenceiq.cloudbreak.cloud.exception.CloudConnectorException;
@@ -61,6 +65,10 @@ public class AwsSetup implements Setup {
     private static final String SUBNET_DOES_NOT_EXIST_MSG = "The given subnet '%s' does not exist or belongs to a different region.";
     private static final String SUBNETVPC_DOES_NOT_EXIST_MSG = "The given subnet '%s' does not belong to the given VPC '%s'.";
     private static final String IGWVPC_DOES_NOT_EXIST_MSG = "The given internet gateway '%s' does not belong to the given VPC '%s'.";
+    private static final String IMAGE_OPT_IN_REQUIRED_MSG = "Unable to create cluster because AWS Marketplace subscription to the Hortonworks Data Cloud"
+            + " HDP Services is required. In order to create a cluster, you need to accept terms and subscribe to the AWS Marketplace product.";
+    private static final String LINK_TO_MARKETPLACE_MSG = "To do so please visit ";
+    private static final String MARKETPLACE_HTTP_LINK = "http://aws.amazon.com/marketplace";
     private static final int FINISHED_PROGRESS_VALUE = 100;
     private static final int UNAUTHORIZED = 403;
 
@@ -88,15 +96,10 @@ public class AwsSetup implements Setup {
         AwsNetworkView awsNetworkView = new AwsNetworkView(stack.getNetwork());
         AwsCredentialView credentialView = new AwsCredentialView(ac.getCloudCredential());
         String region = ac.getCloudContext().getLocation().getRegion().value();
-        if (!awsSpotinstanceEnabled) {
-            for (Group group : stack.getGroups()) {
-                if (group.getInstances().get(0).getParameter("spotPrice", Double.class) != null) {
-                    throw new CloudConnectorException(String.format("Spot instances are not supported on this AMI: %s", stack.getImage()));
-                }
-            }
-        }
+        verifySpotInstances(stack);
         AwsCredentialView awsCredentialView = new AwsCredentialView(ac.getCloudCredential());
-        AwsInstanceProfileView awsInstanceProfileView = new AwsInstanceProfileView(stack.getParameters());
+        AwsInstanceProfileView awsInstanceProfileView = new AwsInstanceProfileView(stack);
+        validateImageOptIn(awsCredentialView, region, stack.getImage().getImageName());
         if (awsClient.roleBasedCredential(awsCredentialView) && awsInstanceProfileView.isCreateInstanceProfile()) {
             validateInstanceProfileCreation(awsCredentialView);
         }
@@ -115,6 +118,44 @@ public class AwsSetup implements Setup {
         }
         validateExistingKeyPair(ac, credentialView, region);
         LOGGER.debug("setup has been executed");
+    }
+
+    private void verifySpotInstances(CloudStack stack) {
+        if (!awsSpotinstanceEnabled) {
+            for (Group group : stack.getGroups()) {
+                if (group.getInstances() != null
+                        && !group.getInstances().isEmpty()
+                        && new AwsInstanceView(group.getInstances().get(0).getTemplate()).getSpotPrice() != null) {
+                    throw new CloudConnectorException(String.format("Spot instances are not supported on this AMI: %s", stack.getImage()));
+                }
+            }
+        }
+    }
+
+    private void validateImageOptIn(AwsCredentialView credentialView, String region, String imageName) {
+        try {
+            AmazonEC2Client amazonEC2Client = awsClient.createAccess(credentialView, region);
+            RunInstancesRequest request = new RunInstancesRequest()
+                    .withMinCount(1)
+                    .withMaxCount(1)
+                    .withImageId(imageName)
+                    .withInstanceType(InstanceType.M3Large);
+            amazonEC2Client.dryRun(request);
+            LOGGER.info("Dry run succeeded, AMI '{}' is safe to launch.", imageName);
+        } catch (AmazonServiceException e) {
+            String errorMessage = e.getErrorMessage();
+            if (e.getErrorCode().equals("OptInRequired")) {
+                int marketplaceLinkIndex = errorMessage.indexOf(MARKETPLACE_HTTP_LINK);
+                if (marketplaceLinkIndex != -1) {
+                    errorMessage = IMAGE_OPT_IN_REQUIRED_MSG + " " + LINK_TO_MARKETPLACE_MSG + errorMessage.substring(marketplaceLinkIndex);
+                } else {
+                    errorMessage = IMAGE_OPT_IN_REQUIRED_MSG;
+                }
+                throw new CloudConnectorException(errorMessage, e);
+            } else {
+                LOGGER.error(String.format("Image opt-in could not be validated for AMI '%s'.", imageName), e);
+            }
+        }
     }
 
     private void validateInstanceProfileCreation(AwsCredentialView awsCredentialView) {
@@ -194,23 +235,40 @@ public class AwsSetup implements Setup {
     private void validateExistingVpc(AwsNetworkView awsNetworkView, AmazonEC2Client amazonEC2Client) {
         DescribeVpcAttributeRequest describeVpcAttributeRequest = new DescribeVpcAttributeRequest();
         describeVpcAttributeRequest.withVpcId(awsNetworkView.getExistingVPC());
+        boolean dnsSupported = isDnsSupported(amazonEC2Client, describeVpcAttributeRequest);
+        boolean hostnameSupported = checkHostnameSupport(amazonEC2Client, describeVpcAttributeRequest);
+
+        if (!dnsSupported || !hostnameSupported) {
+            throw new CloudConnectorException("Please enable both DNS resolution and DNS hostnames in existing VPC: " + awsNetworkView.getExistingVPC());
+        }
+    }
+
+    private boolean isDnsSupported(AmazonEC2Client amazonEC2Client, DescribeVpcAttributeRequest describeVpcAttributeRequest) {
         describeVpcAttributeRequest.withAttribute(VpcAttributeName.EnableDnsSupport);
-        amazonEC2Client.describeVpcAttribute(describeVpcAttributeRequest);
+        DescribeVpcAttributeResult describeVpcAttributeResult = amazonEC2Client.describeVpcAttribute(describeVpcAttributeRequest);
+        return describeVpcAttributeResult.getEnableDnsSupport();
+    }
+
+    private boolean checkHostnameSupport(AmazonEC2Client amazonEC2Client, DescribeVpcAttributeRequest describeVpcAttributeRequest) {
+        describeVpcAttributeRequest.withAttribute(VpcAttributeName.EnableDnsHostnames);
+        DescribeVpcAttributeResult describeVpcAttributeResult = amazonEC2Client.describeVpcAttribute(describeVpcAttributeRequest);
+        return describeVpcAttributeResult.getEnableDnsHostnames();
     }
 
     private void validateExistingSubnet(AwsNetworkView awsNetworkView, AmazonEC2Client amazonEC2Client) {
         if (awsNetworkView.isExistingSubnet()) {
             DescribeSubnetsRequest describeSubnetsRequest = new DescribeSubnetsRequest();
-            describeSubnetsRequest.withSubnetIds(awsNetworkView.getExistingSubnet());
+            describeSubnetsRequest.withSubnetIds(awsNetworkView.getSubnetList());
             DescribeSubnetsResult describeSubnetsResult = amazonEC2Client.describeSubnets(describeSubnetsRequest);
-            if (describeSubnetsResult.getSubnets().size() < 1) {
+            if (describeSubnetsResult.getSubnets().size() < awsNetworkView.getSubnetList().size()) {
                 throw new CloudConnectorException(String.format(SUBNET_DOES_NOT_EXIST_MSG, awsNetworkView.getExistingSubnet()));
             } else {
-                Subnet subnet = describeSubnetsResult.getSubnets().get(0);
-                String vpcId = subnet.getVpcId();
-                if (vpcId != null && !vpcId.equals(awsNetworkView.getExistingVPC())) {
-                    throw new CloudConnectorException(String.format(SUBNETVPC_DOES_NOT_EXIST_MSG, awsNetworkView.getExistingSubnet(),
-                            awsNetworkView.getExistingVPC()));
+                for (Subnet subnet : describeSubnetsResult.getSubnets()) {
+                    String vpcId = subnet.getVpcId();
+                    if (vpcId != null && !vpcId.equals(awsNetworkView.getExistingVPC())) {
+                        throw new CloudConnectorException(String.format(SUBNETVPC_DOES_NOT_EXIST_MSG, awsNetworkView.getExistingSubnet(),
+                                awsNetworkView.getExistingVPC()));
+                    }
                 }
             }
         }

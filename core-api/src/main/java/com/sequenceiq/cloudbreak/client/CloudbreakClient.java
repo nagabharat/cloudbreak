@@ -21,7 +21,9 @@ import com.sequenceiq.cloudbreak.api.endpoint.ConnectorEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.ConstraintTemplateEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.CredentialEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.EventEndpoint;
+import com.sequenceiq.cloudbreak.api.endpoint.LdapConfigEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.NetworkEndpoint;
+import com.sequenceiq.cloudbreak.api.endpoint.RdsConfigEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.RecipeEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.SecurityGroupEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.SssdConfigEndpoint;
@@ -31,6 +33,7 @@ import com.sequenceiq.cloudbreak.api.endpoint.TemplateEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.TopologyEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.UsageEndpoint;
 import com.sequenceiq.cloudbreak.api.endpoint.UserEndpoint;
+import com.sequenceiq.cloudbreak.api.endpoint.UtilEndpoint;
 
 import net.jodah.expiringmap.ExpirationPolicy;
 import net.jodah.expiringmap.ExpiringMap;
@@ -48,7 +51,6 @@ public class CloudbreakClient {
     private final Client client;
     private final IdentityClient identityClient;
     private final String cloudbreakAddress;
-
 
     private String user;
     private String password;
@@ -69,11 +71,14 @@ public class CloudbreakClient {
     private NetworkEndpoint networkEndpoint;
     private RecipeEndpoint recipeEndpoint;
     private SssdConfigEndpoint sssdConfigEndpoint;
+    private RdsConfigEndpoint rdsConfigEndpoint;
     private AccountPreferencesEndpoint accountPreferencesEndpoint;
     private BlueprintEndpoint blueprintEndpoint;
     private ClusterEndpoint clusterEndpoint;
     private ConnectorEndpoint connectorEndpoint;
     private ConstraintTemplateEndpoint constraintTemplateEndpoint;
+    private UtilEndpoint utilEndpoint;
+    private LdapConfigEndpoint ldapConfigEndpoint;
 
     private CloudbreakClient(String cloudbreakAddress, String identityServerAddress, String user, String password, String clientId, ConfigKey configKey) {
         this.client = RestClientUtil.get(configKey);
@@ -134,12 +139,15 @@ public class CloudbreakClient {
         this.networkEndpoint = newResource(NetworkEndpoint.class, headers);
         this.recipeEndpoint = newResource(RecipeEndpoint.class, headers);
         this.sssdConfigEndpoint = newResource(SssdConfigEndpoint.class, headers);
+        this.rdsConfigEndpoint = newResource(RdsConfigEndpoint.class, headers);
         this.accountPreferencesEndpoint = newResource(AccountPreferencesEndpoint.class, headers);
         this.blueprintEndpoint = newResource(BlueprintEndpoint.class, headers);
         this.clusterEndpoint = newResource(ClusterEndpoint.class, headers);
         this.connectorEndpoint = newResource(ConnectorEndpoint.class, headers);
         this.userEndpoint = newResource(UserEndpoint.class, headers);
         this.constraintTemplateEndpoint = newResource(ConstraintTemplateEndpoint.class, headers);
+        this.utilEndpoint = newResource(UtilEndpoint.class, headers);
+        this.ldapConfigEndpoint = newResource(LdapConfigEndpoint.class, headers);
         LOGGER.info("Endpoints have been renewed for CloudbreakClient");
     }
 
@@ -207,6 +215,11 @@ public class CloudbreakClient {
         return sssdConfigEndpoint;
     }
 
+    public RdsConfigEndpoint rdsConfigEndpoint() {
+        refresh();
+        return rdsConfigEndpoint;
+    }
+
     public AccountPreferencesEndpoint accountPreferencesEndpoint() {
         refresh();
         return accountPreferencesEndpoint;
@@ -227,8 +240,18 @@ public class CloudbreakClient {
         return connectorEndpoint;
     }
 
+    public LdapConfigEndpoint ldapConfigEndpoint() {
+        refresh();
+        return ldapConfigEndpoint;
+    }
+
     public ConstraintTemplateEndpoint constraintTemplateEndpoint() {
         return constraintTemplateEndpoint;
+    }
+
+    public UtilEndpoint utilEndpoint() {
+        refresh();
+        return utilEndpoint;
     }
 
     public static class CloudbreakClientBuilder {
@@ -272,7 +295,6 @@ public class CloudbreakClient {
             this.secure = secure;
             return this;
         }
-
 
         public CloudbreakClient build() {
             ConfigKey configKey = new ConfigKey(secure, debug);

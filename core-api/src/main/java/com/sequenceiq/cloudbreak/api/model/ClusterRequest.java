@@ -1,5 +1,6 @@
 package com.sequenceiq.cloudbreak.api.model;
 
+import java.util.HashSet;
 import java.util.Set;
 
 import javax.validation.Valid;
@@ -55,11 +56,17 @@ public class ClusterRequest {
     private Boolean ldapRequired = false;
     @ApiModelProperty(value = ClusterModelDescription.SSSDCONFIG_ID)
     private Long sssdConfigId;
+    @ApiModelProperty(value = ClusterModelDescription.LDAP_CONFIG_ID)
+    private Long ldapConfigId;
     private Boolean validateBlueprint = true;
     @Valid
     private AmbariStackDetailsJson ambariStackDetails;
     @Valid
     private AmbariRepoDetailsJson ambariRepoDetailsJson;
+    @ApiModelProperty(value = ClusterModelDescription.RDSCONFIG_ID)
+    private Long rdsConfigId;
+    @Valid
+    private AmbariDatabaseDetailsJson ambariDatabaseDetails;
     @Valid
     private RDSConfigJson rdsConfigJson;
     @Valid
@@ -68,6 +75,8 @@ public class ClusterRequest {
     private ConfigStrategy configStrategy = ConfigStrategy.ALWAYS_APPLY_DONT_OVERRIDE_CUSTOM_VALUES;
     @ApiModelProperty(value = ClusterModelDescription.ENABLE_SHIPYARD)
     private Boolean enableShipyard = Boolean.FALSE;
+    @ApiModelProperty(value = ClusterModelDescription.BLUEPRINT_INPUTS)
+    private Set<BlueprintInputJson> blueprintInputs = new HashSet<>();
 
     public String getDescription() {
         return description;
@@ -181,6 +190,22 @@ public class ClusterRequest {
         this.ambariRepoDetailsJson = ambariRepoDetailsJson;
     }
 
+    public AmbariDatabaseDetailsJson getAmbariDatabaseDetails() {
+        return ambariDatabaseDetails;
+    }
+
+    public void setAmbariDatabaseDetails(AmbariDatabaseDetailsJson ambariDatabaseDetails) {
+        this.ambariDatabaseDetails = ambariDatabaseDetails;
+    }
+
+    public Long getRdsConfigId() {
+        return rdsConfigId;
+    }
+
+    public void setRdsConfigId(Long rdsConfigId) {
+        this.rdsConfigId = rdsConfigId;
+    }
+
     public RDSConfigJson getRdsConfigJson() {
         return rdsConfigJson;
     }
@@ -213,6 +238,14 @@ public class ClusterRequest {
         this.fileSystem = fileSystem;
     }
 
+    public Long getLdapConfigId() {
+        return ldapConfigId;
+    }
+
+    public void setLdapConfigId(Long ldapConfigId) {
+        this.ldapConfigId = ldapConfigId;
+    }
+
     public ConfigStrategy getConfigStrategy() {
         return configStrategy;
     }
@@ -235,5 +268,13 @@ public class ClusterRequest {
 
     public void setEmailTo(String emailTo) {
         this.emailTo = emailTo;
+    }
+
+    public Set<BlueprintInputJson> getBlueprintInputs() {
+        return blueprintInputs;
+    }
+
+    public void setBlueprintInputs(Set<BlueprintInputJson> blueprintInputs) {
+        this.blueprintInputs = blueprintInputs;
     }
 }

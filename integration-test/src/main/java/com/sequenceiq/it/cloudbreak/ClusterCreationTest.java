@@ -59,8 +59,10 @@ public class ClusterCreationTest extends AbstractCloudbreakIntegrationTest {
         clusterRequest.setHostGroups(hostGroupJsons1);
 
         ClusterEndpoint clusterEndpoint = getCloudbreakClient().clusterEndpoint();
-        CloudbreakUtil.checkResponse("ClusterCreation", clusterEndpoint.post(Long.valueOf(stackId), clusterRequest));
+        Long clusterId = clusterEndpoint.post(Long.valueOf(stackId), clusterRequest).getId();
+
         // THEN
+        Assert.assertNotNull(clusterId);
         CloudbreakUtil.waitAndCheckStackStatus(getCloudbreakClient(), stackIdStr, "AVAILABLE");
         CloudbreakUtil.checkClusterAvailability(getCloudbreakClient().stackEndpoint(), ambariPort, stackIdStr, ambariUser, ambariPassword, checkAmbari);
     }
@@ -77,8 +79,6 @@ public class ClusterCreationTest extends AbstractCloudbreakIntegrationTest {
         for (HostGroup hostgroup : hostGroups) {
             HostGroupJson hostGroupJson = new HostGroupJson();
             hostGroupJson.setName(hostgroup.getName());
-
-
             ConstraintJson constraintJson = new ConstraintJson();
             constraintJson.setInstanceGroupName(hostgroup.getInstanceGroupName());
             constraintJson.setHostCount(hostgroup.getHostCount());

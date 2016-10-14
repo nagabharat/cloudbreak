@@ -12,7 +12,7 @@ endif
 
 all: download-cbd buildcb runtest
 
-runtest: create-image create-cloudbreak-context docker-compose check-results stop-containers
+runtest: create-image create-cloudbreak-context docker-compose stop-containers check-results
 
 download-cbd:
 	@echo "\n\033[1;96m--- download latest cbd\033[0m\n"
@@ -20,7 +20,7 @@ download-cbd:
 
 buildcb:
 	@echo "\n\033[1;96m--- build cloudbreak\033[0m\n"
-	../gradlew -p ../ clean build
+	../gradlew -p ../ clean build -x test
 
 create-image:
 	@echo "\n\033[1;96m--- Test will run on \033[92;5m"$(TEST_ENV)"\033[0m\n"
@@ -28,11 +28,13 @@ create-image:
 	@echo "\n\033[1;96m--- Copy ../core/build/libs/cloudbreak.jar to test-image directory\033[0m\n"
 	@cp ../core/build/libs/cloudbreak.jar test-image
 	@echo "\n\033[1;96m--- Build dev cloudbreak test image\033[0m\n"
-	@docker build -t sequenceiq/cloudbreak:dev test-image
+	@docker build -t hortonworks/cloudbreak:dev test-image
 
 create-cloudbreak-context:
 	@echo "\n\033[1;96m--- Create cloudbreak context\033[0m\n"
 	@cp $(INTEGCB_LOCATION)/Profile_template $(INTEGCB_LOCATION)/Profile
+	@cp docker-compose_template.yml docker-compose.yml
+	@sed -i.bak "s/dns:/dns: $(shell docker run --label cbreak.sidekick=true alpine sh -c 'ip ro | grep default | cut -d" " -f 3')/g" docker-compose.yml
 	@./fill_public_ip.sh
 	@cd $(INTEGCB_LOCATION); ./cbd delete;
 	@cd $(INTEGCB_LOCATION); ./cbd regenerate;
@@ -51,21 +53,21 @@ docker-compose:
 	@echo "\n\033[1;96m--- Test finished\033[0m\n"
 
 check-results:
-	@if grep -q 'skipped="0".*failed="0"' test-output/testng-results.xml; then echo "\n\033[0;92m+++ INTEGRATION TEST SUCCESSFULLY FINISHED +++\n"; else echo "\033[0;91m--- !!! INTEGRATION TEST FAILED, CHECK \033[1;93mtest-output\033[0;91m DIR FOR RESULTS !!! ---\n"; fi
+	@if grep -q 'skipped="0".*failed="0"' test-output/testng-results.xml; then echo "\n\033[0;92m+++ INTEGRATION TEST SUCCESSFULLY FINISHED +++\n"; else echo "\033[0;91m--- !!! INTEGRATION TEST FAILED, CHECK \033[1;93mtest-output\033[0;91m DIR FOR RESULTS !!! ---\n"; exit 1; fi
 
 stop-containers:
 	@echo "\n\033[1;96m--- Stop cbd containers"
 	@cd $(INTEGCB_LOCATION); .deps/bin/docker-compose stop;
 	@echo "\n\033[1;96m--- Save cloudbreak log to cloudbreak.log file"
-	@cd $(INTEGCB_LOCATION); .deps/bin/docker-compose logs --no-color cloudbreak >& ../cloudbreak.log;
+	@cd $(INTEGCB_LOCATION); docker logs cbreak_cloudbreak_1 &> ../cloudbreak.log;
 
 remove-test-containers:
 	@cd $(INTEGCB_LOCATION); ./cbd kill; ./cbd delete;
 
-without-build: create-image create-cloudbreak-context docker-compose check-results
+without-build: download-cbd runtest
 
 build-with-docker: download-cbd docker-build runtest
 
 docker-build:
 	@echo "\n\033[1;96m--- build cloudbreak in docker container\033[0m\n"
-	docker run -i --rm $(ADDITIONAL_DOCKER_BUILD_COMMAND) -v $(shell pwd)/../:/tmp/prj:rw java:openjdk-8 /tmp/prj/gradlew -b /tmp/prj/build.gradle clean build
+	docker run -i --rm $(ADDITIONAL_DOCKER_BUILD_COMMAND) -v $(shell pwd)/../:/tmp/prj:rw java:openjdk-8 /tmp/prj/gradlew -b /tmp/prj/build.gradle clean build -x test

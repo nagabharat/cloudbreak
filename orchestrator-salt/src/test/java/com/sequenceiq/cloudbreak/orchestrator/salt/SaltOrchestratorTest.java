@@ -70,7 +70,8 @@ public class SaltOrchestratorTest {
 
     @Before
     public void setUp() throws Exception {
-        gatewayConfig = new GatewayConfig("1.1.1.1", "10.0.0.1", "10-0-0-1", 9443, "/certdir", "servercert", "clientcert", "clientkey");
+        gatewayConfig = new GatewayConfig("1.1.1.1", "10.0.0.1", "10-0-0-1", 9443, "/certdir", "servercert", "clientcert", "clientkey",
+                "saltpasswd", "saltbootpassword", "signkey");
         targets = new HashSet<>();
         targets.add(new Node("10.0.0.1", "1.1.1.1", "10-0-0-1.example.com"));
         targets.add(new Node("10.0.0.2", "1.1.1.2", "10-0-0-2.example.com"));
@@ -94,11 +95,11 @@ public class SaltOrchestratorTest {
 
         saltOrchestrator.bootstrap(gatewayConfig, targets, exitCriteriaModel);
 
-        verify(parallelOrchestratorComponentRunner, times(2)).submit(any(OrchestratorBootstrapRunner.class));
+        verify(parallelOrchestratorComponentRunner, times(1)).submit(any(OrchestratorBootstrapRunner.class));
 
-        verifyNew(OrchestratorBootstrapRunner.class, times(2))
+        verifyNew(OrchestratorBootstrapRunner.class, times(1))
                 .withArguments(any(PillarSave.class), eq(exitCriteria), eq(exitCriteriaModel), any(), anyInt(), anyInt());
-        verifyNew(OrchestratorBootstrapRunner.class, times(2))
+        verifyNew(OrchestratorBootstrapRunner.class, times(1))
                 .withArguments(any(SaltBootstrap.class), eq(exitCriteria), eq(exitCriteriaModel), any(), anyInt(), anyInt());
         verifyNew(SaltBootstrap.class, times(1)).withArguments(eq(saltConnector), eq(gatewayConfig), eq(targets));
     }
@@ -150,7 +151,7 @@ public class SaltOrchestratorTest {
         saltOrchestrator.runService(gatewayConfig, targets, saltPillarConfig, exitCriteriaModel);
 
         // verify pillar save
-        verifyNew(OrchestratorBootstrapRunner.class, times(1))
+        verifyNew(OrchestratorBootstrapRunner.class, times(2))
                 .withArguments(eq(pillarSave), eq(exitCriteria), eq(exitCriteriaModel), any(), anyInt(), anyInt());
 
         // verify ambari server role

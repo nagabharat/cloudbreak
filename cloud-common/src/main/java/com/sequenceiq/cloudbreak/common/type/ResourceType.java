@@ -1,4 +1,5 @@
 package com.sequenceiq.cloudbreak.common.type;
+
 public enum ResourceType {
     // AWS
     CLOUDFORMATION_STACK,
@@ -26,5 +27,8 @@ public enum ResourceType {
     GCP_INSTANCE,
 
     // ARM
-    ARM_TEMPLATE
+    ARM_TEMPLATE,
+
+    // MOCK
+    MOCK_INSTANCE
 }

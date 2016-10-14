@@ -10,13 +10,18 @@ import org.springframework.stereotype.Component;
 
 import com.sequenceiq.cloudbreak.api.model.HostGroupJson;
 import com.sequenceiq.cloudbreak.controller.validation.blueprint.BlueprintValidator;
+import com.sequenceiq.cloudbreak.controller.validation.ldapconfig.LdapConfigValidator;
 import com.sequenceiq.cloudbreak.domain.Blueprint;
 import com.sequenceiq.cloudbreak.domain.CbUser;
 import com.sequenceiq.cloudbreak.domain.Cluster;
 import com.sequenceiq.cloudbreak.domain.HostGroup;
+import com.sequenceiq.cloudbreak.domain.LdapConfig;
+import com.sequenceiq.cloudbreak.domain.RDSConfig;
 import com.sequenceiq.cloudbreak.domain.SssdConfig;
 import com.sequenceiq.cloudbreak.domain.Stack;
 import com.sequenceiq.cloudbreak.service.blueprint.BlueprintService;
+import com.sequenceiq.cloudbreak.service.ldapconfig.LdapConfigService;
+import com.sequenceiq.cloudbreak.service.rdsconfig.RdsConfigService;
 import com.sequenceiq.cloudbreak.service.sssdconfig.SssdConfigService;
 import com.sequenceiq.cloudbreak.service.stack.StackService;
 
@@ -29,7 +34,9 @@ public class ClusterDecorator implements Decorator<Cluster> {
         BLUEPRINT_ID,
         HOSTGROUP_JSONS,
         VALIDATE_BLUEPRINT,
-        SSSDCONFIG_ID
+        SSSDCONFIG_ID,
+        RDSCONFIG_ID,
+        LDAP_CONFIG_ID;
     }
 
     @Inject
@@ -50,6 +57,15 @@ public class ClusterDecorator implements Decorator<Cluster> {
     @Inject
     private SssdConfigService sssdConfigService;
 
+    @Inject
+    private RdsConfigService rdsConfigService;
+
+    @Inject
+    private LdapConfigService ldapConfigService;
+
+    @Inject
+    private LdapConfigValidator ldapConfigValidator;
+
     @Override
     public Cluster decorate(Cluster subject, Object... data) {
         if (null == data || data.length != DecorationData.values().length) {
@@ -58,6 +74,7 @@ public class ClusterDecorator implements Decorator<Cluster> {
         Long stackId = (Long) data[DecorationData.STACK_ID.ordinal()];
         CbUser user = (CbUser) data[DecorationData.USER.ordinal()];
         Long blueprintId = (Long) data[DecorationData.BLUEPRINT_ID.ordinal()];
+        Long ldapConfigId = (Long) data[DecorationData.LDAP_CONFIG_ID.ordinal()];
         Set<HostGroupJson> hostGroupsJsons = (Set<HostGroupJson>) data[DecorationData.HOSTGROUP_JSONS.ordinal()];
         subject.setBlueprint(blueprintService.get(blueprintId));
         subject.setHostGroups(convertHostGroupsFromJson(stackId, user, subject, hostGroupsJsons));
@@ -70,6 +87,16 @@ public class ClusterDecorator implements Decorator<Cluster> {
         if (data[DecorationData.SSSDCONFIG_ID.ordinal()] != null) {
             SssdConfig config = sssdConfigService.get((Long) data[DecorationData.SSSDCONFIG_ID.ordinal()]);
             subject.setSssdConfig(config);
+        }
+        Long rdsConfigId = (Long) data[DecorationData.RDSCONFIG_ID.ordinal()];
+        if (data[DecorationData.RDSCONFIG_ID.ordinal()] != null) {
+            RDSConfig rdsConfig = rdsConfigService.get(rdsConfigId);
+            subject.setRdsConfig(rdsConfig);
+        }
+        if (ldapConfigId != null) {
+            LdapConfig ldapConfig = ldapConfigService.get(ldapConfigId);
+            ldapConfigValidator.validateLdapConnection(ldapConfig);
+            subject.setLdapConfig(ldapConfig);
         }
         return subject;
     }

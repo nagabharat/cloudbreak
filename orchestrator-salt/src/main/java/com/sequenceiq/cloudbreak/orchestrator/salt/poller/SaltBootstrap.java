@@ -21,6 +21,8 @@ import com.sequenceiq.cloudbreak.orchestrator.salt.client.SaltConnector;
 import com.sequenceiq.cloudbreak.orchestrator.salt.client.target.Glob;
 import com.sequenceiq.cloudbreak.orchestrator.salt.domain.Minion;
 import com.sequenceiq.cloudbreak.orchestrator.salt.domain.SaltAction;
+import com.sequenceiq.cloudbreak.orchestrator.salt.domain.SaltAuth;
+import com.sequenceiq.cloudbreak.orchestrator.salt.domain.SaltMaster;
 import com.sequenceiq.cloudbreak.orchestrator.salt.states.SaltStates;
 
 public class SaltBootstrap implements OrchestratorBootstrap {
@@ -41,6 +43,7 @@ public class SaltBootstrap implements OrchestratorBootstrap {
 
     @Override
     public Boolean call() throws Exception {
+        LOGGER.info("Bootstrapping of nodes [{}/{}]", originalTargets.size() - targets.size(), originalTargets.size());
         if (!targets.isEmpty()) {
             LOGGER.info("Missing targets for SaltBootstrap: {}", targets);
 
@@ -49,7 +52,7 @@ public class SaltBootstrap implements OrchestratorBootstrap {
 
             Set<Node> failedTargets = new HashSet<>();
 
-            LOGGER.info("Salt run response: {}", responses);
+            LOGGER.info("SaltBootstrap responses: {}", responses);
             for (GenericResponse genericResponse : responses.getResponses()) {
                 if (genericResponse.getStatusCode() != HttpStatus.OK.value()) {
                     LOGGER.info("Successfully distributed salt run to: " + genericResponse.getAddress());
@@ -60,8 +63,8 @@ public class SaltBootstrap implements OrchestratorBootstrap {
             targets = failedTargets;
 
             if (!targets.isEmpty()) {
-                LOGGER.info("Missing nodes to run salt: %s", targets);
-                throw new CloudbreakOrchestratorFailedException("There are missing nodes from salt: " + targets);
+                LOGGER.info("Missing nodes to run saltbootstrap: {}", targets);
+                throw new CloudbreakOrchestratorFailedException("There are missing nodes from saltbootstrap: " + targets);
             }
         }
 
@@ -73,8 +76,9 @@ public class SaltBootstrap implements OrchestratorBootstrap {
             }
         });
         if (!targets.isEmpty()) {
-            throw new CloudbreakOrchestratorFailedException("There are missing nodes from salt: " + targets);
+            throw new CloudbreakOrchestratorFailedException("There are missing nodes from salt network response: " + targets);
         }
+        LOGGER.info("Bootstrapping of nodes completed: {}", originalTargets.size());
         return true;
     }
 
@@ -82,6 +86,13 @@ public class SaltBootstrap implements OrchestratorBootstrap {
         SaltAction saltAction = new SaltAction(SaltActionType.RUN);
 
         if (targets.stream().map(Node::getPrivateIp).collect(Collectors.toList()).contains(getGatewayPrivateIp())) {
+            SaltAuth auth = new SaltAuth();
+            auth.setPassword(sc.getSaltPassword());
+            SaltMaster master = new SaltMaster();
+            master.setAddress(getGatewayPrivateIp());
+            master.setAuth(auth);
+            saltAction.setMaster(master);
+            //set due to compatibility reason
             saltAction.setServer(getGatewayPrivateIp());
             Node saltMaster = targets.stream().filter(n -> n.getPrivateIp().equals(getGatewayPrivateIp())).findFirst().get();
             saltAction.addMinion(createMinion(saltMaster));

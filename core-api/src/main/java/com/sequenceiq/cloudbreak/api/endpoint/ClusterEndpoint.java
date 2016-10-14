@@ -14,6 +14,9 @@ import javax.ws.rs.core.Response;
 
 import com.sequenceiq.cloudbreak.api.model.ClusterRequest;
 import com.sequenceiq.cloudbreak.api.model.ClusterResponse;
+import com.sequenceiq.cloudbreak.api.model.ConfigsRequest;
+import com.sequenceiq.cloudbreak.api.model.ConfigsResponse;
+import com.sequenceiq.cloudbreak.api.model.IdJson;
 import com.sequenceiq.cloudbreak.api.model.UpdateClusterJson;
 import com.sequenceiq.cloudbreak.doc.ContentType;
 import com.sequenceiq.cloudbreak.doc.ControllerDescription;
@@ -32,7 +35,7 @@ public interface ClusterEndpoint {
     @Path("{id}/cluster")
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(value = OperationDescriptions.ClusterOpDescription.POST_FOR_STACK, produces = ContentType.JSON, notes = Notes.CLUSTER_NOTES)
-    Response post(@PathParam(value = "id") Long id, @Valid ClusterRequest request) throws Exception;
+    IdJson post(@PathParam(value = "id") Long id, @Valid ClusterRequest request) throws Exception;
 
     @GET
     @Path("{id}/cluster")
@@ -63,5 +66,11 @@ public interface ClusterEndpoint {
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(value = OperationDescriptions.ClusterOpDescription.PUT_BY_STACK_ID, produces = ContentType.JSON, notes = Notes.CLUSTER_NOTES)
     Response put(@PathParam(value = "id") Long stackId, @Valid UpdateClusterJson updateJson) throws Exception;
+
+    @POST
+    @Path("{id}/cluster/config")
+    @Produces(MediaType.APPLICATION_JSON)
+    @ApiOperation(value = OperationDescriptions.ClusterOpDescription.GET_CLUSTER_PROPERTIES, produces = ContentType.JSON, notes = Notes.CLUSTER_NOTES)
+    ConfigsResponse getConfigs(@PathParam(value = "id") Long stackId, ConfigsRequest requests) throws Exception;
 
 }

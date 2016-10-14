@@ -8,7 +8,10 @@ import static com.sequenceiq.cloudbreak.api.model.Status.UPDATE_REQUESTED;
 import static com.sequenceiq.cloudbreak.common.type.OrchestratorConstants.MARATHON;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,12 +29,16 @@ import org.springframework.stereotype.Service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sequenceiq.ambari.client.AmbariClient;
+import com.sequenceiq.cloudbreak.api.model.BlueprintInputJson;
+import com.sequenceiq.cloudbreak.api.model.BlueprintParameterJson;
 import com.sequenceiq.cloudbreak.api.model.ClusterResponse;
+import com.sequenceiq.cloudbreak.api.model.ConfigsResponse;
 import com.sequenceiq.cloudbreak.api.model.HostGroupAdjustmentJson;
 import com.sequenceiq.cloudbreak.api.model.InstanceStatus;
 import com.sequenceiq.cloudbreak.api.model.Status;
 import com.sequenceiq.cloudbreak.api.model.StatusRequest;
 import com.sequenceiq.cloudbreak.api.model.UserNamePasswordJson;
+import com.sequenceiq.cloudbreak.client.HttpClientConfig;
 import com.sequenceiq.cloudbreak.cloud.model.HDPRepo;
 import com.sequenceiq.cloudbreak.cloud.store.InMemoryStateStore;
 import com.sequenceiq.cloudbreak.common.type.APIResourceType;
@@ -58,6 +65,7 @@ import com.sequenceiq.cloudbreak.domain.HostMetadata;
 import com.sequenceiq.cloudbreak.domain.InstanceGroup;
 import com.sequenceiq.cloudbreak.domain.InstanceMetaData;
 import com.sequenceiq.cloudbreak.domain.Stack;
+import com.sequenceiq.cloudbreak.domain.StopRestrictionReason;
 import com.sequenceiq.cloudbreak.domain.json.Json;
 import com.sequenceiq.cloudbreak.repository.ClusterRepository;
 import com.sequenceiq.cloudbreak.repository.ConstraintRepository;
@@ -74,7 +82,6 @@ import com.sequenceiq.cloudbreak.service.events.CloudbreakEventService;
 import com.sequenceiq.cloudbreak.service.hostgroup.HostGroupService;
 import com.sequenceiq.cloudbreak.service.messages.CloudbreakMessagesService;
 import com.sequenceiq.cloudbreak.service.stack.StackService;
-import com.sequenceiq.cloudbreak.service.stack.flow.HttpClientConfig;
 import com.sequenceiq.cloudbreak.util.AmbariClientExceptionUtil;
 import com.sequenceiq.cloudbreak.util.JsonUtil;
 
@@ -150,23 +157,6 @@ public class AmbariClusterService implements ClusterService {
 
     @Inject
     private ComponentConfigProvider componentConfigProvider;
-
-    private enum Msg {
-        AMBARI_CLUSTER_START_IGNORED("ambari.cluster.start.ignored"),
-        AMBARI_CLUSTER_STOP_IGNORED("ambari.cluster.stop.ignored"),
-        AMBARI_CLUSTER_HOST_STATUS_UPDATED("ambari.cluster.host.status.updated"),
-        AMBARI_CLUSTER_START_REQUESTED("ambari.cluster.start.requested");
-
-        private String code;
-
-        Msg(String msgCode) {
-            code = msgCode;
-        }
-
-        public String code() {
-            return code;
-        }
-    }
 
     @Override
     @Transactional(Transactional.TxType.NEVER)
@@ -366,13 +356,14 @@ public class AmbariClusterService implements ClusterService {
     }
 
     private void stop(Stack stack, Cluster cluster) {
+        StopRestrictionReason reason = stack.isInfrastructureStoppable();
         if (cluster.isStopped()) {
             String statusDesc = cloudbreakMessagesService.getMessage(Msg.AMBARI_CLUSTER_STOP_IGNORED.code());
             LOGGER.info(statusDesc);
             eventService.fireCloudbreakEvent(stack.getId(), stack.getStatus().name(), statusDesc);
-        } else if (stack.infrastructureIsEphemeral()) {
+        } else if (reason != StopRestrictionReason.NONE) {
             throw new BadRequestException(
-                    String.format("Cannot stop a cluster '%s' if the volumeType is Ephemeral.", cluster.getId()));
+                    String.format("Cannot stop a cluster '%s'. Reason: %s", cluster.getId(), reason.getReason()));
         } else if (!cluster.isClusterReadyForStop() && !cluster.isStopFailed()) {
             throw new BadRequestException(
                     String.format("Cannot update the status of cluster '%s' to STOPPED, because it isn't in AVAILABLE state.", cluster.getId()));
@@ -435,10 +426,14 @@ public class AmbariClusterService implements ClusterService {
             HttpClientConfig clientConfig = tlsSecurityService.buildTLSClientConfig(stackId, cluster.getAmbariIp());
             AmbariClient ambariClient = ambariClientProvider.getAmbariClient(clientConfig, stack.getGatewayPort(), stack.getCluster().getUserName(),
                     stack.getCluster().getPassword());
+            Map<String, Integer> hostGroupCounter = new HashMap<>();
             Set<HostMetadata> hosts = hostMetadataRepository.findHostsInCluster(stack.getCluster().getId());
             Map<String, String> hostStatuses = ambariClient.getHostStatuses();
             for (HostMetadata host : hosts) {
                 if (hostStatuses.containsKey(host.getHostName())) {
+                    String hgName = host.getHostGroup().getName();
+                    Integer hgCounter = hostGroupCounter.getOrDefault(hgName, 0) + 1;
+                    hostGroupCounter.put(hgName, hgCounter);
                     HostMetadataState newState = HostMetadataState.HEALTHY.name().equals(hostStatuses.get(host.getHostName()))
                             ? HostMetadataState.HEALTHY : HostMetadataState.UNHEALTHY;
                     boolean stateChanged = updateHostMetadataByHostState(stack, host.getHostName(), newState);
@@ -447,10 +442,24 @@ public class AmbariClusterService implements ClusterService {
                     }
                 }
             }
+            hostGroupCounter(cluster.getId(), hostGroupCounter);
         } catch (CloudbreakSecuritySetupException e) {
             throw new CloudbreakServiceException(e);
         }
         return cluster;
+    }
+
+    private void hostGroupCounter(Long clusterId, Map<String, Integer> hostGroupCounter) {
+        LOGGER.info("Counted hostgroups: {}", hostGroupCounter);
+        Set<HostGroup> hostGroups = hostGroupService.getByCluster(clusterId);
+        for (HostGroup hostGroup : hostGroups) {
+            Integer hgCounter = hostGroupCounter.getOrDefault(hostGroup.getName(), 0);
+            if (!hgCounter.equals(hostGroup.getConstraint().getHostCount())) {
+                hostGroup.getConstraint().setHostCount(hgCounter);
+                constraintRepository.save(hostGroup.getConstraint());
+                LOGGER.info("Updated HostCount for hostgroup: {}, counter: {}", hostGroup.getName(), hgCounter);
+            }
+        }
     }
 
     private void updateInstanceMetadataStateToRegistered(Long stackId, HostMetadata host) {
@@ -622,6 +631,104 @@ public class AmbariClusterService implements ClusterService {
             throw new NotFoundException(String.format("Cluster '%s' not found", id));
         }
         return cluster;
+    }
+
+    @Override
+    public ConfigsResponse retrieveOutputs(Long stackId, Set<BlueprintParameterJson> requests) throws CloudbreakSecuritySetupException, IOException {
+        Stack stack = stackService.get(stackId);
+        Cluster cluster = stack.getCluster();
+        HttpClientConfig clientConfig = tlsSecurityService.buildTLSClientConfig(stack.getId(), cluster.getAmbariIp());
+
+        AmbariClient ambariClient = ambariClientProvider.getAmbariClient(clientConfig, stack.getGatewayPort(), cluster.getUserName(), cluster.getPassword());
+
+        List<String> targets = new ArrayList<>();
+        Map<String, String> bpI = new HashMap<>();
+        if (cluster.getBlueprintInputs().getValue() != null) {
+            bpI = cluster.getBlueprintInputs().get(Map.class);
+        }
+        prepareTargets(requests, targets, bpI);
+        Map<String, String> results = new HashMap<>();
+        if (cluster.getAmbariIp() != null) {
+            results = ambariClient.getConfigValuesByConfigIds(targets);
+        }
+        prepareResults(requests, cluster, bpI, results);
+        prepareAdditionalInputParameters(results, cluster);
+
+        Set<BlueprintInputJson> blueprintInputJsons = new HashSet<>();
+
+        for (Map.Entry<String, String> stringStringEntry : results.entrySet()) {
+            for (BlueprintParameterJson blueprintParameter : requests) {
+                if (stringStringEntry.getKey().equals(blueprintParameter.getName())) {
+                    BlueprintInputJson blueprintInputJson = new BlueprintInputJson();
+                    blueprintInputJson.setName(blueprintParameter.getName());
+                    blueprintInputJson.setPropertyValue(stringStringEntry.getValue());
+                    blueprintInputJsons.add(blueprintInputJson);
+                    break;
+                }
+            }
+        }
+
+        ConfigsResponse configsResponse = new ConfigsResponse();
+        configsResponse.setInputs(blueprintInputJsons);
+        return configsResponse;
+    }
+
+    private void prepareResults(Set<BlueprintParameterJson> requests, Cluster cluster, Map<String, String> bpI, Map<String, String> results) {
+        if (cluster.getBlueprintInputs().getValue() != null) {
+            if (bpI != null) {
+                for (Map.Entry<String, String> stringStringEntry : bpI.entrySet()) {
+                    if (!results.keySet().contains(stringStringEntry.getKey())) {
+                        results.put(stringStringEntry.getKey(), stringStringEntry.getValue());
+                    }
+                }
+            }
+        }
+
+        for (BlueprintParameterJson request : requests) {
+            if (results.keySet().contains(request.getReferenceConfiguration())) {
+                results.put(request.getName(), results.get(request.getReferenceConfiguration()));
+                results.remove(request.getReferenceConfiguration());
+            }
+        }
+    }
+
+    private void prepareTargets(Set<BlueprintParameterJson> requests, List<String> targets, Map<String, String> bpI) {
+        for (BlueprintParameterJson request : requests) {
+            if (bpI != null) {
+                boolean contains = false;
+                for (Map.Entry<String, String> stringStringEntry : bpI.entrySet()) {
+                    if (stringStringEntry.getKey().equals(request.getName())) {
+                        contains = true;
+                    }
+                }
+                if (!contains) {
+                    targets.add(request.getReferenceConfiguration());
+                }
+            } else {
+                targets.add(request.getReferenceConfiguration());
+            }
+        }
+    }
+
+    private void prepareAdditionalInputParameters(Map<String, String> results, Cluster cluster) {
+        results.put("REMOTE_CLUSTER_NAME", cluster.getName());
+    }
+
+    private enum Msg {
+        AMBARI_CLUSTER_START_IGNORED("ambari.cluster.start.ignored"),
+        AMBARI_CLUSTER_STOP_IGNORED("ambari.cluster.stop.ignored"),
+        AMBARI_CLUSTER_HOST_STATUS_UPDATED("ambari.cluster.host.status.updated"),
+        AMBARI_CLUSTER_START_REQUESTED("ambari.cluster.start.requested");
+
+        private String code;
+
+        Msg(String msgCode) {
+            code = msgCode;
+        }
+
+        public String code() {
+            return code;
+        }
     }
 
 }

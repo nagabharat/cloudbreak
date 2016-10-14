@@ -6,7 +6,6 @@ import static org.mockito.Matchers.anyLong;
 import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 
@@ -19,12 +18,14 @@ import org.springframework.core.convert.ConversionService;
 import org.springframework.core.convert.TypeDescriptor;
 
 import com.sequenceiq.cloudbreak.TestUtil;
+import com.sequenceiq.cloudbreak.api.model.CloudbreakDetailsJson;
 import com.sequenceiq.cloudbreak.api.model.ClusterResponse;
 import com.sequenceiq.cloudbreak.api.model.FailurePolicyJson;
 import com.sequenceiq.cloudbreak.api.model.ImageJson;
 import com.sequenceiq.cloudbreak.api.model.InstanceGroupJson;
 import com.sequenceiq.cloudbreak.api.model.OrchestratorResponse;
 import com.sequenceiq.cloudbreak.api.model.StackResponse;
+import com.sequenceiq.cloudbreak.cloud.model.CloudbreakDetails;
 import com.sequenceiq.cloudbreak.cloud.model.Image;
 import com.sequenceiq.cloudbreak.core.CloudbreakImageNotFoundException;
 import com.sequenceiq.cloudbreak.domain.Cluster;
@@ -32,6 +33,7 @@ import com.sequenceiq.cloudbreak.domain.FailurePolicy;
 import com.sequenceiq.cloudbreak.domain.Network;
 import com.sequenceiq.cloudbreak.domain.Orchestrator;
 import com.sequenceiq.cloudbreak.domain.Stack;
+import com.sequenceiq.cloudbreak.service.ComponentConfigProvider;
 import com.sequenceiq.cloudbreak.service.image.ImageService;
 
 public class StackToJsonConverterTest extends AbstractEntityConverterTest<Stack> {
@@ -45,11 +47,15 @@ public class StackToJsonConverterTest extends AbstractEntityConverterTest<Stack>
     @Mock
     private ImageService imageService;
 
+    @Mock
+    private ComponentConfigProvider componentConfigProvider;
+
     @Before
     public void setUp() throws CloudbreakImageNotFoundException {
         underTest = new StackToJsonConverter();
         MockitoAnnotations.initMocks(this);
         when(imageService.getImage(anyLong())).thenReturn(new Image("testimage", new HashMap<>()));
+        when(componentConfigProvider.getCloudbreakDetails(anyLong())).thenReturn(new CloudbreakDetails("version"));
     }
 
     @Test
@@ -59,13 +65,14 @@ public class StackToJsonConverterTest extends AbstractEntityConverterTest<Stack>
                 .willReturn(new ImageJson())
                 .willReturn(new ClusterResponse())
                 .willReturn(new FailurePolicyJson())
-                .willReturn(new OrchestratorResponse());
+                .willReturn(new OrchestratorResponse())
+                .willReturn(new CloudbreakDetailsJson());
         given(conversionService.convert(any(Object.class), any(TypeDescriptor.class), any(TypeDescriptor.class)))
                 .willReturn(new HashSet<InstanceGroupJson>());
         // WHEN
         StackResponse result = underTest.convert(getSource());
         // THEN
-        assertAllFieldsNotNull(result, Collections.singletonList("platformVariant"));
+        assertAllFieldsNotNull(result, Arrays.asList("platformVariant", "ambariVersion", "hdpVersion"));
     }
 
     @Test
@@ -75,13 +82,14 @@ public class StackToJsonConverterTest extends AbstractEntityConverterTest<Stack>
                 .willReturn(new ImageJson())
                 .willReturn(new ClusterResponse())
                 .willReturn(new FailurePolicyJson())
-                .willReturn(new OrchestratorResponse());
+                .willReturn(new OrchestratorResponse())
+                .willReturn(new CloudbreakDetailsJson());
         given(conversionService.convert(any(Object.class), any(TypeDescriptor.class), any(TypeDescriptor.class)))
                 .willReturn(new HashSet<InstanceGroupJson>());
         // WHEN
         StackResponse result = underTest.convert(getSource());
         // THEN
-        assertAllFieldsNotNull(result, Arrays.asList("credentialId", "cloudPlatform", "platformVariant"));
+        assertAllFieldsNotNull(result, Arrays.asList("credentialId", "cloudPlatform", "platformVariant", "ambariVersion", "hdpVersion"));
     }
 
     @Test
@@ -91,14 +99,15 @@ public class StackToJsonConverterTest extends AbstractEntityConverterTest<Stack>
         given(conversionService.convert(any(Object.class), any(Class.class)))
                 .willReturn(new ImageJson())
                 .willReturn(new FailurePolicyJson())
-                .willReturn(new OrchestratorResponse());
+                .willReturn(new OrchestratorResponse())
+                .willReturn(new CloudbreakDetailsJson());
         given(conversionService.convert(any(Object.class), any(TypeDescriptor.class), any(TypeDescriptor.class)))
                 .willReturn(new HashSet<InstanceGroupJson>());
         getSource().setCluster(null);
         // WHEN
         StackResponse result = underTest.convert(getSource());
         // THEN
-        assertAllFieldsNotNull(result, Arrays.asList("cluster", "platformVariant"));
+        assertAllFieldsNotNull(result, Arrays.asList("cluster", "platformVariant", "ambariVersion", "hdpVersion"));
     }
 
     @Test
@@ -108,13 +117,14 @@ public class StackToJsonConverterTest extends AbstractEntityConverterTest<Stack>
         given(conversionService.convert(any(Object.class), any(Class.class)))
                 .willReturn(new ImageJson())
                 .willReturn(new ClusterResponse())
-                .willReturn(new OrchestratorResponse());
+                .willReturn(new OrchestratorResponse())
+                .willReturn(new CloudbreakDetailsJson());
         given(conversionService.convert(any(Object.class), any(TypeDescriptor.class), any(TypeDescriptor.class)))
                 .willReturn(new HashSet<InstanceGroupJson>());
         // WHEN
         StackResponse result = underTest.convert(getSource());
         // THEN
-        assertAllFieldsNotNull(result, Arrays.asList("failurePolicy", "platformVariant"));
+        assertAllFieldsNotNull(result, Arrays.asList("failurePolicy", "platformVariant", "ambariVersion", "hdpVersion"));
     }
 
     @Test
@@ -125,13 +135,14 @@ public class StackToJsonConverterTest extends AbstractEntityConverterTest<Stack>
                 .willReturn(new ImageJson())
                 .willReturn(new ClusterResponse())
                 .willReturn(new FailurePolicyJson())
-                .willReturn(new OrchestratorResponse());
+                .willReturn(new OrchestratorResponse())
+                .willReturn(new CloudbreakDetailsJson());
         given(conversionService.convert(any(Object.class), any(TypeDescriptor.class), any(TypeDescriptor.class)))
                 .willReturn(new HashSet<InstanceGroupJson>());
         // WHEN
         StackResponse result = underTest.convert(getSource());
         // THEN
-        assertAllFieldsNotNull(result, Arrays.asList("networkId", "platformVariant"));
+        assertAllFieldsNotNull(result, Arrays.asList("networkId", "platformVariant", "ambariVersion", "hdpVersion"));
     }
 
     @Override

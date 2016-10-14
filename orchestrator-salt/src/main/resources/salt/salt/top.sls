@@ -1,27 +1,11 @@
 base:
   '*':
-    - kernel.init
-    - users.init
-
-  'platform:OPENSTACK':
-    - match: pillar
-    - discovery.init
-
-  'platform:GCP':
-    - match: pillar
-    - discovery.init
-
-  'platform:AZURE_RM':
-    - match: pillar
-    - discovery.init
-
-  'platform:AWS':
-    - match: pillar
-    - dns.init
+    - discovery
+    - java
 
   'roles:kerberos_server':
     - match: grain
-    - kerberos.server
+    - kerberos
 
   'roles:ambari_server':
     - match: grain
@@ -31,16 +15,18 @@ base:
     - match: grain
     - ambari.agent
 
-  'I@platform:AWS and G@roles:smartsense':
-    - match: compound
-    - smartsense.init
+  'roles:smartsense':
+    - match: grain
+    - smartsense
 
   'recipes:pre':
     - match: grain
-    - pre-recipes.init
+    - pre-recipes
+
+  'G@recipes:post and G@roles:knox_gateway':
+    - match: compound
+    - ldap
 
   'recipes:post':
     - match: grain
-    - post-recipes.init
-    - users.add-to-group
-
+    - post-recipes

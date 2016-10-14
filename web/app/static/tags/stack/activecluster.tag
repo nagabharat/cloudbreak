@@ -1,4 +1,5 @@
 <div id="active-cluster-panel" class="col-sm-11 col-md-11 col-lg-11">
+    <input type="hidden" id="cloudbreak-details-{{activeCluster.id}}" name="cloudbreak-details-{{activeCluster.name}}" value="{{activeCluster.cloudbreakDetails.version}}">
     <div class="panel panel-default">
         <div class="panel-heading panel-heading-nav">
             <a href="" id="cluster-details-back-btn" class="btn btn-info btn-fa-2x" role="button" ng-click="deselectActiveCluster()"><i class="fa fa-angle-left fa-2x fa-fw-forced"></i></a>
@@ -41,8 +42,8 @@
                                 <label class="col-sm-3 control-label" for="sl_ambariServerIp">{{msg.active_cluster_ambari_address_label}}</label>
                                 <div class="col-sm-9">
                                     <div ng-if="activeCluster.cluster.ambariServerIp != null">
-                                        <a ng-if="activeCluster.orchestrator.type !== 'MARATHON'" target="_blank" class="form-control-static review-a" href="https://{{activeCluster.cluster.ambariServerIp}}/ambari/">https://{{activeCluster.cluster.ambariServerIp}}/ambari/</a>
-                                        <a ng-if="activeCluster.orchestrator.type === 'MARATHON'" target="_blank" class="form-control-static review-a" href="http://{{activeCluster.cluster.ambariServerIp}}:8080">http://{{activeCluster.cluster.ambariServerIp}}:8080</a>
+                                        <a ng-if="noProxyBeforeAmbari()" target="_blank" class="form-control-static review-a" href="http://{{activeCluster.cluster.ambariServerIp}}:8080">http://{{activeCluster.cluster.ambariServerIp}}:8080</a>
+                                        <a ng-if="!noProxyBeforeAmbari()" target="_blank" class="form-control-static review-a" href="https://{{activeCluster.cluster.ambariServerIp}}/ambari/">https://{{activeCluster.cluster.ambariServerIp}}/ambari/</a>
                                     </div>
                                     <div ng-if="activeCluster.cluster.ambariServerIp == null">
                                         <a target="_blank" class="form-control-static review-a" href="">{{msg.active_cluster_ambari_not_available_label}}</a>
@@ -596,7 +597,7 @@
                             <button type="button" class="btn btn-block btn-default" data-dismiss="modal">{{msg.cluster_list_cancel_command_label}}</button>
                         </div>
                         <div class="col-xs-6">
-                            <button type="button" class="btn btn-block btn-success" data-dismiss="modal" id="stackStackBtn" ng-click="changeClusterCredential(activeCluster)"><i class="fa fa-key fa-fw"></i>{{msg.active_cluster_command_credential_short_label}}</button>
+                            <button type="button" class="btn btn-block btn-success" data-dismiss="modal" id="stackStackBtn" ng-disabled="changeCredential.$invalid" ng-click="changeClusterCredential(activeCluster)"><i class="fa fa-key fa-fw"></i>{{msg.active_cluster_command_credential_short_label}}</button>
                         </div>
                     </div>
                 </div>

@@ -7,17 +7,10 @@ include:
   - ambari.repo
 
 ambari-agent:
-  pkg.latest:
+  pkg.installed:
     - require:
       - sls: ambari.repo
-
-{% else %}
-
-set_parallel_execution:
-  file.replace:
-    - name: /etc/ambari-agent/conf/ambari-agent.ini
-    - pattern: parallel_execution=0
-    - repl: parallel_execution=1
+    - version: {{ ambari.version }}
 
 {% endif %}
 
@@ -83,15 +76,22 @@ start-ambari-agent:
 
 {% else %}
 
-/etc/init/ambari-agent.conf:
+# Upstart case
+
+# Avoid concurrency between SysV and Upstart
+disable-ambari-agent-sysv:
+  cmd.run:
+    - name: chkconfig ambari-agent off
+    - onlyif: chkconfig --list ambari-agent | grep on
+
+
+/etc/init/ambari-agent.override:
   file.managed:
-    - source: salt://ambari/upstart/ambari-agent.conf
+    - source: salt://ambari/upstart/ambari-agent.override
 
 start-ambari-agent:
   service.running:
     - enable: True
     - name: ambari-agent
-    - watch:
-       - file: /etc/init/ambari-agent.conf
 
 {% endif %}

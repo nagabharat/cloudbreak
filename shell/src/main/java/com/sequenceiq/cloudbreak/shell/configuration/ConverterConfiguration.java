@@ -27,6 +27,7 @@ import com.sequenceiq.cloudbreak.shell.converter.AzureInstanceTypeConverter;
 import com.sequenceiq.cloudbreak.shell.converter.AzureOrchestratorTypeConverter;
 import com.sequenceiq.cloudbreak.shell.converter.AzureVolumeTypeConverter;
 import com.sequenceiq.cloudbreak.shell.converter.ConstraintNameConverter;
+import com.sequenceiq.cloudbreak.shell.converter.DatabaseVendorConverter;
 import com.sequenceiq.cloudbreak.shell.converter.GcpInstanceTypeConverter;
 import com.sequenceiq.cloudbreak.shell.converter.GcpOrchestratorTypeConverter;
 import com.sequenceiq.cloudbreak.shell.converter.GcpVolumeTypeConverter;
@@ -39,6 +40,8 @@ import com.sequenceiq.cloudbreak.shell.converter.NetworkNameConverter;
 import com.sequenceiq.cloudbreak.shell.converter.OpenStackFacingConverter;
 import com.sequenceiq.cloudbreak.shell.converter.OpenStackOrchestratorTypeConverter;
 import com.sequenceiq.cloudbreak.shell.converter.PlatformVariantConverter;
+import com.sequenceiq.cloudbreak.shell.converter.RdsConfigIdConverter;
+import com.sequenceiq.cloudbreak.shell.converter.RdsConfigNameConverter;
 import com.sequenceiq.cloudbreak.shell.converter.SecurityGroupIdConverter;
 import com.sequenceiq.cloudbreak.shell.converter.SecurityGroupNameConverter;
 import com.sequenceiq.cloudbreak.shell.converter.SecurityRulesConverter;
@@ -230,6 +233,16 @@ public class ConverterConfiguration {
     }
 
     @Bean
+    Converter getRdsIdConverter() {
+        return new RdsConfigIdConverter();
+    }
+
+    @Bean
+    Converter getRdsNameConverter() {
+        return new RdsConfigNameConverter();
+    }
+
+    @Bean
     Converter getSssdSchemaTypeConverter() {
         return new SssdSchemaTypeConverter();
     }
@@ -267,5 +280,10 @@ public class ConverterConfiguration {
     @Bean
     Converter azureOrchestratorTypeConverter() {
         return new AzureOrchestratorTypeConverter();
+    }
+
+    @Bean
+    Converter databaseVendorConverter() {
+        return new DatabaseVendorConverter();
     }
 }

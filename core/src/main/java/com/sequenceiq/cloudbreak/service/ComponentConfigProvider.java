@@ -2,6 +2,7 @@ package com.sequenceiq.cloudbreak.service;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 
 import javax.inject.Inject;
 
@@ -9,7 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import com.sequenceiq.cloudbreak.cloud.model.AmbariDatabase;
 import com.sequenceiq.cloudbreak.cloud.model.AmbariRepo;
+import com.sequenceiq.cloudbreak.cloud.model.CloudbreakDetails;
 import com.sequenceiq.cloudbreak.cloud.model.HDPRepo;
 import com.sequenceiq.cloudbreak.cloud.model.Image;
 import com.sequenceiq.cloudbreak.common.type.ComponentType;
@@ -63,7 +66,31 @@ public class ComponentConfigProvider {
             }
             return component.getAttributes().get(AmbariRepo.class);
         } catch (IOException e) {
-            throw new CloudbreakServiceException("Failed to read image", e);
+            throw new CloudbreakServiceException("Failed to read Ambari repo", e);
+        }
+    }
+
+    public AmbariDatabase getAmbariDatabase(Long stackId) {
+        try {
+            Component component = getComponent(stackId, ComponentType.AMBARI_DATABASE_DETAILS, ComponentType.AMBARI_DATABASE_DETAILS.name());
+            if (component == null) {
+                return null;
+            }
+            return component.getAttributes().get(AmbariDatabase.class);
+        } catch (IOException e) {
+            throw new CloudbreakServiceException("Failed to read Ambari database", e);
+        }
+    }
+
+    public CloudbreakDetails getCloudbreakDetails(Long stackId) {
+        try {
+            Component component = getComponent(stackId, ComponentType.CLOUDBREAK_DETAILS, ComponentType.CLOUDBREAK_DETAILS.name());
+            if (component == null) {
+                return null;
+            }
+            return component.getAttributes().get(CloudbreakDetails.class);
+        } catch (IOException e) {
+            throw new CloudbreakServiceException("Failed to read Cloudbreak details for stack.", e);
         }
     }
 
@@ -81,5 +108,12 @@ public class ComponentConfigProvider {
         return components;
     }
 
-
+    public void deleteComponentsForStack(Long stackId) {
+        Set<Component> componentsByStackId = componentRepository.findComponentByStackId(stackId);
+        if (!componentsByStackId.isEmpty()) {
+            LOGGER.debug("Components({}) are going to be deleted for stack: {}", componentsByStackId.size(), stackId);
+            componentRepository.delete(componentsByStackId);
+            LOGGER.debug("Components({}) have been deleted for stack : {}", componentsByStackId.size(), stackId);
+        }
+    }
 }

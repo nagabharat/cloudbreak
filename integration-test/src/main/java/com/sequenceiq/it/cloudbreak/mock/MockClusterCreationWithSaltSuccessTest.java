@@ -36,7 +36,6 @@ import com.sequenceiq.it.cloudbreak.AbstractMockIntegrationTest;
 import com.sequenceiq.it.cloudbreak.CloudbreakITContextConstants;
 import com.sequenceiq.it.cloudbreak.CloudbreakUtil;
 import com.sequenceiq.it.cloudbreak.HostGroup;
-import com.sequenceiq.it.spark.ambari.AmbariBlueprintsResponse;
 import com.sequenceiq.it.spark.ambari.AmbariCheckResponse;
 import com.sequenceiq.it.spark.ambari.AmbariClusterRequestsResponse;
 import com.sequenceiq.it.spark.ambari.AmbariClusterResponse;
@@ -102,15 +101,16 @@ public class MockClusterCreationWithSaltSuccessTest extends AbstractMockIntegrat
         addAmbariMappings(numberOfServers);
 
         ClusterEndpoint clusterEndpoint = getCloudbreakClient().clusterEndpoint();
-        CloudbreakUtil.checkResponse("ClusterCreation", clusterEndpoint.post(Long.valueOf(stackId), clusterRequest));
+        Long clusterId = clusterEndpoint.post(Long.valueOf(stackId), clusterRequest).getId();
         // THEN
+        Assert.assertNotNull(clusterId);
         CloudbreakUtil.waitAndCheckStackStatus(getCloudbreakClient(), stackIdStr, "AVAILABLE");
         CloudbreakUtil.checkClusterAvailability(getCloudbreakClient().stackEndpoint(), ambariPort, stackIdStr, ambariUser, ambariPassword, checkAmbari);
 
-        verifyCalls(numberOfServers);
+        verifyCalls(numberOfServers, clusterName);
     }
 
-    private void verifyCalls(int numberOfServers) {
+    private void verifyCalls(int numberOfServers, String clusterName) {
         verify(SALT_BOOT_ROOT + "/health", "GET").exactTimes(1).verify();
         Verification distributeVerification = verify(SALT_BOOT_ROOT + "/salt/action/distribute", "POST").exactTimes(1);
         new ServerAddressGenerator(numberOfServers).iterateOver(address -> distributeVerification.bodyContains("address\":\"" + address));
@@ -123,7 +123,7 @@ public class MockClusterCreationWithSaltSuccessTest extends AbstractMockIntegrat
         verify(AMBARI_API_ROOT + "/blueprints/bp", "POST").exactTimes(1)
                 .bodyContains("blueprint_name").bodyContains("stack_name").bodyContains("stack_version").bodyContains("host_groups")
                 .exactTimes(1).verify();
-        verify(AMBARI_API_ROOT + "/clusters/it-mock-cluster", "POST").exactTimes(1).bodyContains("blueprint").bodyContains("default_password")
+        verify(AMBARI_API_ROOT + "/clusters/" + clusterName, "POST").exactTimes(1).bodyContains("blueprint").bodyContains("default_password")
                 .bodyContains("host_groups").verify();
         verify(AMBARI_API_ROOT + "/clusters/ambari_cluster/requests/1", "GET").atLeast(1).verify();
         verify(AMBARI_API_ROOT + "/clusters/ambari_cluster/hosts", "GET").exactTimes(1).verify();
@@ -142,12 +142,12 @@ public class MockClusterCreationWithSaltSuccessTest extends AbstractMockIntegrat
     private void addAmbariMappings(int numberOfServers) {
         get(AMBARI_API_ROOT + "/clusters/:cluster/requests/:request", new AmbariStatusResponse());
         post(AMBARI_API_ROOT + "/views/:view/versions/1.0.0/instances/*", new EmptyAmbariResponse());
-        get(AMBARI_API_ROOT + "/clusters", new AmbariClusterResponse(numberOfServers));
+        get(AMBARI_API_ROOT + "/clusters", new AmbariClusterResponse());
         post(AMBARI_API_ROOT + "/clusters/:cluster/requests", new AmbariClusterRequestsResponse());
         post(AMBARI_API_ROOT + "/clusters/:cluster", new EmptyAmbariResponse(), gson()::toJson);
         get(AMBARI_API_ROOT + "/services/AMBARI/components/AMBARI_SERVER", new AmbariServicesComponentsResponse(), gson()::toJson);
         get(AMBARI_API_ROOT + "/hosts", new AmbariHostsResponse(numberOfServers), gson()::toJson);
-        get(AMBARI_API_ROOT + "/blueprints/*", new AmbariBlueprintsResponse());
+        get(AMBARI_API_ROOT + "/blueprints/*", (request, response) -> responseFromJsonFile("blueprint/hdp-small-default.bp"));
         post(AMBARI_API_ROOT + "/blueprints/*", new EmptyAmbariResponse());
         put(AMBARI_API_ROOT + "/users/admin", new EmptyAmbariResponse());
         get(AMBARI_API_ROOT + "/check", new AmbariCheckResponse());
@@ -184,6 +184,7 @@ public class MockClusterCreationWithSaltSuccessTest extends AbstractMockIntegrat
                 GenericResponse genericResponse = new GenericResponse();
                 genericResponse.setAddress(address);
                 genericResponse.setStatus("host-" + address.replace(".", "-"));
+                genericResponse.setStatusCode(200);
                 responses.add(genericResponse);
             });
             genericResponses.setResponses(responses);

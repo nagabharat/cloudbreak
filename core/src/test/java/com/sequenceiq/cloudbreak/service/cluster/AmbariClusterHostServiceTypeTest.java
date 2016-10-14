@@ -52,7 +52,7 @@ import com.sequenceiq.cloudbreak.repository.InstanceMetaDataRepository;
 import com.sequenceiq.cloudbreak.service.TlsSecurityService;
 import com.sequenceiq.cloudbreak.service.hostgroup.HostGroupService;
 import com.sequenceiq.cloudbreak.service.stack.StackService;
-import com.sequenceiq.cloudbreak.service.stack.flow.HttpClientConfig;
+import com.sequenceiq.cloudbreak.client.HttpClientConfig;
 
 import groovyx.net.http.HttpResponseException;
 
@@ -117,6 +117,21 @@ public class AmbariClusterHostServiceTypeTest {
         cluster = TestUtil.cluster(TestUtil.blueprint(), TestUtil.stack(Status.AVAILABLE, TestUtil.awsCredential()), 1L);
         cluster.getStack().setCloudPlatform("AWS");
         stack = TestUtil.setEphemeral(cluster.getStack());
+        cluster.setStatus(Status.AVAILABLE);
+        cluster.setStack(stack);
+        stack.setCluster(cluster);
+
+        when(stackService.get(anyLong())).thenReturn(stack);
+        when(stackService.getById(anyLong())).thenReturn(stack);
+
+        underTest.updateStatus(1L, StatusRequest.STOPPED);
+    }
+
+    @Test(expected = BadRequestException.class)
+    public void testStopWhenAwsHasSpotInstances() {
+        cluster = TestUtil.cluster(TestUtil.blueprint(), TestUtil.stack(Status.AVAILABLE, TestUtil.awsCredential()), 1L);
+        cluster.getStack().setCloudPlatform("AWS");
+        stack = TestUtil.setSpotInstances(cluster.getStack());
         cluster.setStatus(Status.AVAILABLE);
         cluster.setStack(stack);
         stack.setCluster(cluster);

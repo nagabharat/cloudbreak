@@ -13,6 +13,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -41,18 +42,21 @@ import com.sequenceiq.cloudbreak.domain.HostGroup;
 import com.sequenceiq.cloudbreak.domain.HostMetadata;
 import com.sequenceiq.cloudbreak.domain.InstanceGroup;
 import com.sequenceiq.cloudbreak.domain.InstanceMetaData;
+import com.sequenceiq.cloudbreak.domain.LdapConfig;
 import com.sequenceiq.cloudbreak.domain.Network;
 import com.sequenceiq.cloudbreak.domain.Orchestrator;
 import com.sequenceiq.cloudbreak.domain.Plugin;
 import com.sequenceiq.cloudbreak.domain.RDSConfig;
 import com.sequenceiq.cloudbreak.domain.Recipe;
 import com.sequenceiq.cloudbreak.domain.Resource;
+import com.sequenceiq.cloudbreak.domain.SecurityConfig;
 import com.sequenceiq.cloudbreak.domain.SecurityGroup;
 import com.sequenceiq.cloudbreak.domain.SecurityRule;
 import com.sequenceiq.cloudbreak.domain.SssdConfig;
 import com.sequenceiq.cloudbreak.domain.Stack;
 import com.sequenceiq.cloudbreak.domain.Template;
 import com.sequenceiq.cloudbreak.domain.json.Json;
+import com.sequenceiq.cloudbreak.domain.json.JsonToString;
 
 public class TestUtil {
 
@@ -164,6 +168,7 @@ public class TestUtil {
             default:
                 break;
         }
+        stack.setSecurityConfig(new SecurityConfig());
         return stack;
     }
 
@@ -348,7 +353,14 @@ public class TestUtil {
         cluster.setEnableShipyard(true);
         RDSConfig rdsConfig = new RDSConfig();
         cluster.setRdsConfig(rdsConfig);
+        cluster.setLdapConfig(ldapConfig());
         cluster.setHostGroups(hostGroups(cluster));
+        Map<String, String> map = new HashMap<>();
+        try {
+            cluster.setAttributes(new Json(map));
+        } catch (JsonProcessingException e) {
+            cluster.setAttributes(null);
+        }
         return cluster;
     }
 
@@ -424,6 +436,25 @@ public class TestUtil {
             configs.add(config);
         }
         return configs;
+    }
+
+    public static LdapConfig ldapConfig() {
+        LdapConfig config = new LdapConfig();
+        config.setId(1L);
+        config.setName(DUMMY_NAME);
+        config.setDescription(DUMMY_DESCRIPTION);
+        config.setPublicInAccount(true);
+        config.setPrincipalRegex("(.*)");
+        config.setUserSearchBase("cn=users,dc=example,dc=org");
+        config.setUserSearchFilter("");
+        config.setGroupSearchBase("cn=groups,dc=example,dc=org");
+        config.setGroupSearchFilter("");
+        config.setBindDn("cn=admin,dc=example,dc=org");
+        config.setBindPassword("admin");
+        config.setServerHost("localhost");
+        config.setServerPort(389);
+        config.setServerSSL(false);
+        return config;
     }
 
     public static Blueprint blueprint(String name) {
@@ -549,5 +580,16 @@ public class TestUtil {
         resource.setResourceName("testResource");
         resource.setResourceType(ResourceType.GCP_INSTANCE);
         return resource;
+    }
+
+    public static Stack setSpotInstances(Stack stack) {
+        if (stack.cloudPlatform().equals(AWS)) {
+            for (InstanceGroup instanceGroup : stack.getInstanceGroups()) {
+                (instanceGroup.getTemplate()).setAttributes(new JsonToString().convertToEntityAttribute(
+                        "{\"sshLocation\":\"0.0.0.0/0\",\"encrypted\":false,\"spotPrice\":0.04}"));
+            }
+        }
+        return stack;
+
     }
 }

@@ -64,6 +64,7 @@ public class StackDecorator implements Decorator<Stack> {
             if (subject.getFailurePolicy() != null) {
                 validatFailurePolicy(subject, subject.getFailurePolicy());
             }
+
             validate(subject);
         } else {
             subject.setCloudPlatform("BYOS");
@@ -83,7 +84,6 @@ public class StackDecorator implements Decorator<Stack> {
             subject.setOrchestrator(orchestratorObject);
         }
     }
-
 
     private void validate(Stack stack) {
         if (stack.getGatewayInstanceGroup() == null) {

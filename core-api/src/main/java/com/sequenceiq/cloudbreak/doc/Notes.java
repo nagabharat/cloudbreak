@@ -47,6 +47,11 @@ public class Notes {
     public static final String USER_NOTES = "Users can be invited under an account by the administrator, and all resources "
             + "(e.g. resources, networks, blueprints, credentials, clusters) can be shared across account users";
     public static final String TOPOLOGY_NOTES = "A topology gives system administrators an easy way to associate compute nodes with data centers and racks.";
+    public static final String RDSCONFIG_NOTES = "An RDS Configuration describe a connection to an external Relational Database Service "
+            + "that can be used as the Hive Metastore.";
+
+    public static final String LDAP_CONFIG_NOTES = "LDAP server integration enables the user to provide"
+            + " a central place to store usernames and passwords for the users of his/her clusters.";
 
     private Notes() {
     }

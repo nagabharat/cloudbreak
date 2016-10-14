@@ -5,16 +5,19 @@
 include:
   - ambari.repo
 
-haveged:
-  pkg.installed: []
-  service.running:
-    - enable: True
-
 ambari-server:
-  pkg.latest:
+  pkg.installed:
     - require:
       - sls: ambari.repo
+    - version: {{ ambari.version }}
 
+{% endif %}
+
+{% if ambari.ambari_database.vendor == 'mysql' %}
+install-mariadb:
+  pkg.installed:
+    - pkgs:
+      - mariadb
 {% endif %}
 
 /var/lib/ambari-server/jdbc-drivers:
@@ -26,6 +29,9 @@ ambari-server:
   file.managed:
     - makedirs: True
     - source: salt://ambari/scripts/ambari-server-init.sh
+    - template: jinja
+    - context:
+      ambari_database: {{ ambari.ambari_database }}
     - mode: 744
 
 set_install_timeout:
@@ -53,15 +59,21 @@ start-ambari-server:
 
 {% else %}
 
-/etc/init/ambari-server.conf:
+# Upstart case
+
+# Avoid concurrency between SysV and Upstart
+disable-ambari-server-sysv:
+  cmd.run:
+    - name: chkconfig ambari-server off
+    - onlyif: chkconfig --list ambari-server | grep on
+
+/etc/init/ambari-server.override:
   file.managed:
-    - source: salt://ambari/upstart/ambari-server.conf
+    - source: salt://ambari/upstart/ambari-server.override
 
 start-ambari-server:
   service.running:
     - enable: True
     - name: ambari-server
-    - watch:
-       - file: /etc/init/ambari-server.conf
 
 {% endif %}

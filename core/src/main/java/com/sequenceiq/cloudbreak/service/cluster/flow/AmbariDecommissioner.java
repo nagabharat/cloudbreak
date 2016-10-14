@@ -34,6 +34,7 @@ import org.springframework.stereotype.Component;
 
 import com.sequenceiq.ambari.client.AmbariClient;
 import com.sequenceiq.cloudbreak.api.model.Status;
+import com.sequenceiq.cloudbreak.client.HttpClientConfig;
 import com.sequenceiq.cloudbreak.controller.BadRequestException;
 import com.sequenceiq.cloudbreak.core.CloudbreakException;
 import com.sequenceiq.cloudbreak.core.CloudbreakSecuritySetupException;
@@ -45,8 +46,6 @@ import com.sequenceiq.cloudbreak.domain.Cluster;
 import com.sequenceiq.cloudbreak.domain.Container;
 import com.sequenceiq.cloudbreak.domain.HostGroup;
 import com.sequenceiq.cloudbreak.domain.HostMetadata;
-import com.sequenceiq.cloudbreak.domain.InstanceGroup;
-import com.sequenceiq.cloudbreak.domain.InstanceMetaData;
 import com.sequenceiq.cloudbreak.domain.Orchestrator;
 import com.sequenceiq.cloudbreak.domain.Stack;
 import com.sequenceiq.cloudbreak.orchestrator.container.ContainerOrchestrator;
@@ -59,6 +58,7 @@ import com.sequenceiq.cloudbreak.repository.ClusterRepository;
 import com.sequenceiq.cloudbreak.repository.ContainerRepository;
 import com.sequenceiq.cloudbreak.repository.StackRepository;
 import com.sequenceiq.cloudbreak.service.CloudbreakServiceException;
+import com.sequenceiq.cloudbreak.service.GatewayConfigService;
 import com.sequenceiq.cloudbreak.service.PollingResult;
 import com.sequenceiq.cloudbreak.service.PollingService;
 import com.sequenceiq.cloudbreak.service.TlsSecurityService;
@@ -70,7 +70,6 @@ import com.sequenceiq.cloudbreak.service.cluster.filter.HostFilterService;
 import com.sequenceiq.cloudbreak.service.events.CloudbreakEventService;
 import com.sequenceiq.cloudbreak.service.hostgroup.HostGroupService;
 import com.sequenceiq.cloudbreak.service.messages.CloudbreakMessagesService;
-import com.sequenceiq.cloudbreak.service.stack.flow.HttpClientConfig;
 import com.sequenceiq.cloudbreak.util.AmbariClientExceptionUtil;
 
 import groovyx.net.http.HttpResponseException;
@@ -83,6 +82,7 @@ public class AmbariDecommissioner {
     private static final int MAX_ATTEMPTS_FOR_REGION_DECOM = 500;
     private static final String DATANODE = "DATANODE";
     private static final double SAFETY_PERCENTAGE = 1.2;
+    private static final int NO_REPLICATION = 0;
 
     @Inject
     private StackRepository stackRepository;
@@ -120,6 +120,8 @@ public class AmbariDecommissioner {
     private ContainerRepository containerRepository;
     @Inject
     private TlsSecurityService tlsSecurityService;
+    @Inject
+    private GatewayConfigService gatewayConfigService;
     @Inject
     private OrchestratorTypeResolver orchestratorTypeResolver;
     @Inject
@@ -219,15 +221,17 @@ public class AmbariDecommissioner {
         List<HostMetadata> downScaleCandidates;
         HttpClientConfig clientConfig = tlsSecurityService.buildTLSClientConfig(stack.getId(), cluster.getAmbariIp());
         AmbariClient ambariClient = ambariClientProvider.getAmbariClient(clientConfig, stack.getGatewayPort(), cluster.getUserName(), cluster.getPassword());
-        int replication = getReplicationFactor(ambariClient, hostGroupName);
         HostGroup hostGroup = hostGroupService.getByClusterIdAndName(cluster.getId(), hostGroupName);
         Set<HostMetadata> hostsInHostGroup = hostGroup.getHostMetadata();
         List<HostMetadata> filteredHostList = hostFilterService.filterHostsForDecommission(cluster, hostsInHostGroup, hostGroupName);
         int reservedInstances = hostsInHostGroup.size() - filteredHostList.size();
-        verifyNodeCount(replication, scalingAdjustment, filteredHostList, reservedInstances);
-        if (doesHostGroupContainDataNode(ambariClient, cluster.getBlueprint().getBlueprintName(), hostGroup.getName())) {
+        String blueprintName = cluster.getBlueprint().getBlueprintName();
+        if (doesHostGroupContainDataNode(ambariClient, blueprintName, hostGroupName)) {
+            int replication = getReplicationFactor(ambariClient, hostGroupName);
+            verifyNodeCount(replication, scalingAdjustment, filteredHostList, reservedInstances);
             downScaleCandidates = checkAndSortByAvailableSpace(stack, ambariClient, replication, scalingAdjustment, filteredHostList);
         } else {
+            verifyNodeCount(NO_REPLICATION, scalingAdjustment, filteredHostList, reservedInstances);
             downScaleCandidates = filteredHostList;
         }
         return downScaleCandidates;
@@ -377,10 +381,7 @@ public class AmbariDecommissioner {
                 }
             } else if (orchestratorType.hostOrchestrator()) {
                 HostOrchestrator hostOrchestrator = hostOrchestratorResolver.get(stack.getOrchestrator().getType());
-                InstanceGroup gateway = stack.getGatewayInstanceGroup();
-                InstanceMetaData gatewayInstance = gateway.getInstanceMetaData().iterator().next();
-                GatewayConfig gatewayConfig = tlsSecurityService.buildGatewayConfig(stack.getId(), gatewayInstance.getPublicIpWrapper(),
-                        stack.getGatewayPort(), gatewayInstance.getPrivateIp(), gatewayInstance.getDiscoveryFQDN());
+                GatewayConfig gatewayConfig = gatewayConfigService.getGatewayConfig(stack);
                 hostOrchestrator.tearDown(gatewayConfig, hostList);
                 deleteHosts(stack, hostList, components);
             }

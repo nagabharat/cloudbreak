@@ -19,6 +19,7 @@ import com.sequenceiq.cloudbreak.api.model.OrchestratorRequest;
 import com.sequenceiq.cloudbreak.api.model.StackRequest;
 import com.sequenceiq.cloudbreak.api.model.StackResponse;
 import com.sequenceiq.cloudbreak.client.CloudbreakClient;
+import com.sequenceiq.cloudbreak.common.type.OrchestratorConstants;
 import com.sequenceiq.cloudbreak.shell.completion.ConstraintName;
 import com.sequenceiq.cloudbreak.shell.completion.HostGroup;
 import com.sequenceiq.cloudbreak.shell.model.FocusType;
@@ -174,7 +175,6 @@ public class MarathonCommands implements CommandMarker {
         }
     }
 
-
     @CliCommand(value = "marathon constraint create", help = "Create a new marathon constraint")
     public String createMarathonTemplate(
             @CliOption(key = "name", mandatory = true, help = "Name of the marathon constraint") String name,
@@ -191,6 +191,7 @@ public class MarathonCommands implements CommandMarker {
             constraintTemplateRequest.setDescription(description);
             constraintTemplateRequest.setDisk(disk);
             constraintTemplateRequest.setMemory(memory);
+            constraintTemplateRequest.setOrchestratorType(OrchestratorConstants.MARATHON);
             publicInAccount = publicInAccount == null ? false : publicInAccount;
             if (publicInAccount) {
                 idJson = cloudbreakClient.constraintTemplateEndpoint().postPublic(constraintTemplateRequest);

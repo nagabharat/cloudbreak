@@ -44,6 +44,7 @@ import com.sequenceiq.cloudbreak.api.model.FileSystemConfiguration;
 import com.sequenceiq.cloudbreak.api.model.FileSystemType;
 import com.sequenceiq.cloudbreak.api.model.InstanceStatus;
 import com.sequenceiq.cloudbreak.api.model.Status;
+import com.sequenceiq.cloudbreak.client.HttpClientConfig;
 import com.sequenceiq.cloudbreak.cloud.model.HDPRepo;
 import com.sequenceiq.cloudbreak.cloud.scheduler.CancellationException;
 import com.sequenceiq.cloudbreak.common.type.CloudConstants;
@@ -55,6 +56,7 @@ import com.sequenceiq.cloudbreak.core.CloudbreakException;
 import com.sequenceiq.cloudbreak.core.CloudbreakImageNotFoundException;
 import com.sequenceiq.cloudbreak.core.CloudbreakSecuritySetupException;
 import com.sequenceiq.cloudbreak.core.ClusterException;
+import com.sequenceiq.cloudbreak.domain.Blueprint;
 import com.sequenceiq.cloudbreak.domain.Cluster;
 import com.sequenceiq.cloudbreak.domain.FileSystem;
 import com.sequenceiq.cloudbreak.domain.HostGroup;
@@ -77,6 +79,7 @@ import com.sequenceiq.cloudbreak.service.TlsSecurityService;
 import com.sequenceiq.cloudbreak.service.cluster.AmbariClientProvider;
 import com.sequenceiq.cloudbreak.service.cluster.AmbariOperationFailedException;
 import com.sequenceiq.cloudbreak.service.cluster.HadoopConfigurationService;
+import com.sequenceiq.cloudbreak.service.cluster.flow.blueprint.AutoRecoveryConfigProvider;
 import com.sequenceiq.cloudbreak.service.cluster.flow.blueprint.BlueprintConfigurationEntry;
 import com.sequenceiq.cloudbreak.service.cluster.flow.blueprint.BlueprintProcessor;
 import com.sequenceiq.cloudbreak.service.cluster.flow.blueprint.RDSConfigProvider;
@@ -89,7 +92,6 @@ import com.sequenceiq.cloudbreak.service.image.ImageService;
 import com.sequenceiq.cloudbreak.service.messages.CloudbreakMessagesService;
 import com.sequenceiq.cloudbreak.service.stack.flow.AmbariStartupListenerTask;
 import com.sequenceiq.cloudbreak.service.stack.flow.AmbariStartupPollerObject;
-import com.sequenceiq.cloudbreak.service.stack.flow.HttpClientConfig;
 import com.sequenceiq.cloudbreak.util.AmbariClientExceptionUtil;
 import com.sequenceiq.cloudbreak.util.JsonUtil;
 
@@ -156,9 +158,13 @@ public class AmbariClusterConnector {
     @Inject
     private RDSConfigProvider rdsConfigProvider;
     @Inject
+    private AutoRecoveryConfigProvider autoRecoveryConfigProvider;
+    @Inject
     private ImageService imageService;
     @Inject
     private ComponentConfigProvider componentConfigProvider;
+    @Inject
+    private AmbariViewProvider ambariViewProvider;
 
     public void waitForAmbariServer(Stack stack) throws CloudbreakException {
         AmbariClient ambariClient = getDefaultAmbariClient(stack);
@@ -181,9 +187,9 @@ public class AmbariClusterConnector {
             cluster.setCreationStarted(new Date().getTime());
             cluster = clusterRepository.save(cluster);
 
-            String blueprintText = cluster.getBlueprint().getBlueprintText();
-            FileSystem fs = cluster.getFileSystem();
+            String blueprintText = updateBlueprintWithInputs(cluster, cluster.getBlueprint());
 
+            FileSystem fs = cluster.getFileSystem();
             blueprintText = updateBlueprintConfiguration(stack, blueprintText, cluster.getRdsConfig(), fs);
 
             AmbariClient ambariClient = getAmbariClient(stack);
@@ -217,10 +223,11 @@ public class AmbariClusterConnector {
 
             recipeEngine.executePostInstall(stack);
 
-//            executeSmokeTest(stack, ambariClient);
+            // executeSmokeTest(stack, ambariClient);
             //TODO https://hortonworks.jira.com/browse/BUG-51920
             startStoppedServices(stack, ambariClient, stack.getCluster().getBlueprint().getBlueprintName());
             triggerSmartSenseCapture(ambariClient, blueprintText);
+            cluster = ambariViewProvider.provideViewInformation(ambariClient, cluster);
             cluster = handleClusterCreationSuccess(stack, cluster);
             return cluster;
         } catch (CancellationException cancellationException) {
@@ -251,6 +258,21 @@ public class AmbariClusterConnector {
             blueprintText = blueprintProcessor.addConfigEntries(blueprintText, rdsConfigProvider.getConfigs(rdsConfig), true);
             blueprintText = blueprintProcessor.removeComponentFromBlueprint("MYSQL_SERVER", blueprintText);
         }
+        blueprintText = autoRecoveryConfigProvider.addToBlueprint(blueprintText);
+        return blueprintText;
+    }
+
+    public String updateBlueprintWithInputs(Cluster cluster, Blueprint blueprint) throws CloudbreakSecuritySetupException, IOException {
+        String blueprintText = blueprint.getBlueprintText();
+
+        Map<String, String> bpI = cluster.getBlueprintInputs().get(Map.class);
+        if (bpI != null) {
+            for (Map.Entry<String, String> stringStringEntry : bpI.entrySet()) {
+                blueprintText = blueprintText.replaceAll(String.format("\\{\\{ %s \\}\\}",
+                        stringStringEntry.getKey()), stringStringEntry.getValue());
+            }
+        }
+
         return blueprintText;
     }
 
@@ -402,6 +424,7 @@ public class AmbariClusterConnector {
     }
 
     private void stopAllServices(Stack stack, AmbariClient ambariClient) throws CloudbreakException {
+        LOGGER.info("Stop all Hadoop services");
         eventService.fireCloudbreakEvent(stack.getId(), Status.UPDATE_IN_PROGRESS.name(),
                 cloudbreakMessagesService.getMessage(Msg.AMBARI_CLUSTER_SERVICES_STOPPING.code()));
         int requestId = ambariClient.stopAllServices();
@@ -415,6 +438,7 @@ public class AmbariClusterConnector {
                 throw new CloudbreakException("Timeout while stopping Ambari services.");
             }
         } else {
+            LOGGER.warn("Failed to stop Hadoop services.");
             throw new CloudbreakException("Failed to stop Hadoop services.");
         }
         eventService.fireCloudbreakEvent(stack.getId(), Status.UPDATE_IN_PROGRESS.name(),
@@ -422,6 +446,7 @@ public class AmbariClusterConnector {
     }
 
     private void startAllServices(Stack stack, AmbariClient ambariClient) throws CloudbreakException {
+        LOGGER.info("Start all Hadoop services");
         eventService.fireCloudbreakEvent(stack.getId(), Status.UPDATE_IN_PROGRESS.name(),
                 cloudbreakMessagesService.getMessage(Msg.AMBARI_CLUSTER_SERVICES_STARTING.code()));
         int requestId = ambariClient.startAllServices();
@@ -435,6 +460,7 @@ public class AmbariClusterConnector {
                 throw new CloudbreakException("Timeout while starting Ambari services.");
             }
         } else {
+            LOGGER.warn("Failed to start Hadoop services.");
             throw new CloudbreakException("Failed to start Hadoop services.");
         }
         eventService.fireCloudbreakEvent(stack.getId(), Status.UPDATE_IN_PROGRESS.name(),

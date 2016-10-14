@@ -19,6 +19,7 @@ import java.util.Set;
 
 import javax.persistence.CascadeType;
 import javax.persistence.Column;
+import javax.persistence.Convert;
 import javax.persistence.Entity;
 import javax.persistence.EnumType;
 import javax.persistence.Enumerated;
@@ -36,6 +37,8 @@ import javax.persistence.UniqueConstraint;
 
 import com.sequenceiq.cloudbreak.api.model.ConfigStrategy;
 import com.sequenceiq.cloudbreak.api.model.Status;
+import com.sequenceiq.cloudbreak.domain.json.Json;
+import com.sequenceiq.cloudbreak.domain.json.JsonToString;
 
 @Entity
 @Table(name = "Cluster", uniqueConstraints = {
@@ -47,9 +50,17 @@ import com.sequenceiq.cloudbreak.api.model.Status;
                 query = "SELECT c FROM Cluster c "
                         + "WHERE c.blueprint.id= :id"),
         @NamedQuery(
+                name = "Cluster.findAllClustersByRDSConfig",
+                query = "SELECT c FROM Cluster c "
+                        + "WHERE c.rdsConfig.id= :id"),
+        @NamedQuery(
                 name = "Cluster.findAllClustersBySssdConfig",
                 query = "SELECT c FROM Cluster c "
                         + "WHERE c.sssdConfig.id= :id"),
+        @NamedQuery(
+                name = "Cluster.findAllClustersByLdapConfig",
+                query = "SELECT c FROM Cluster c "
+                        + "WHERE c.ldapConfig.id= :id"),
         @NamedQuery(
                 name = "Cluster.findOneWithLists",
                 query = "SELECT c FROM Cluster c "
@@ -128,7 +139,7 @@ public class Cluster implements ProvisionEntity {
     @OneToMany(mappedBy = "cluster", cascade = CascadeType.ALL, orphanRemoval = true)
     private Set<Container> containers = new HashSet<>();
 
-    @OneToOne(cascade = CascadeType.ALL, orphanRemoval = true)
+    @ManyToOne
     private RDSConfig rdsConfig;
 
     @ManyToOne
@@ -136,6 +147,17 @@ public class Cluster implements ProvisionEntity {
 
     @Enumerated(EnumType.STRING)
     private ConfigStrategy configStrategy;
+
+    @ManyToOne
+    private LdapConfig ldapConfig;
+
+    @Convert(converter = JsonToString.class)
+    @Column(columnDefinition = "TEXT")
+    private Json attributes;
+
+    @Convert(converter = JsonToString.class)
+    @Column(columnDefinition = "TEXT")
+    private Json blueprintInputs;
 
     public Stack getStack() {
         return stack;
@@ -413,6 +435,14 @@ public class Cluster implements ProvisionEntity {
                 || DELETE_IN_PROGRESS.equals(status);
     }
 
+    public Json getAttributes() {
+        return attributes;
+    }
+
+    public void setAttributes(Json attributes) {
+        this.attributes = attributes;
+    }
+
     public String getEmailTo() {
         return emailTo;
     }
@@ -427,5 +457,21 @@ public class Cluster implements ProvisionEntity {
 
     public void setConfigStrategy(ConfigStrategy configStrategy) {
         this.configStrategy = configStrategy;
+    }
+
+    public LdapConfig getLdapConfig() {
+        return ldapConfig;
+    }
+
+    public void setLdapConfig(LdapConfig ldapConfig) {
+        this.ldapConfig = ldapConfig;
+    }
+
+    public Json getBlueprintInputs() {
+        return blueprintInputs;
+    }
+
+    public void setBlueprintInputs(Json blueprintInputs) {
+        this.blueprintInputs = blueprintInputs;
     }
 }
